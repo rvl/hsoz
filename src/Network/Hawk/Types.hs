@@ -27,14 +27,19 @@ type ClientId = Text
 
 ----------------------------------------------------------------------------
 
+-- | The set of data the server requires for key-based hash
+-- verification of artifacts.
 data ServerCredentials = ServerCredentials
-  { scKey       :: Key
-  , scAlgorithm :: HawkAlgo
+  { scKey       :: Key -- ^ Key
+  , scAlgorithm :: HawkAlgo -- ^ HMAC
   , scUser      :: Text
   , scApp       :: Maybe Text  -- fixme: maybe not Maybe
   , scDlg       :: Maybe ByteString
   } deriving (Show, Generic)
 
+-- | Artifacts are the attributes which are included in the
+-- verification. The terminology (and spelling) come from the original
+-- Javascript implementation of Hawk.
 data ServerAuthArtifacts = ServerAuthArtifacts
   { shaMethod    :: Method
   , shaHost      :: ByteString
@@ -53,7 +58,7 @@ data ServerAuthArtifacts = ServerAuthArtifacts
 
 ----------------------------------------------------------------------------
 
--- | Value of @Content-Type@ HTTP header.
+-- | Value of @Content-Type@ HTTP headers.
 type ContentType = ByteString -- fixme: CI ByteString
 
 -- | Payload data and content type bundled up for convenience.

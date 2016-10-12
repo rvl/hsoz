@@ -1,5 +1,11 @@
 {-# LANGUAGE RecordWildCards #-}
 
+-- | Provides a "Network.Wai" 'Network.Wai.Application' for managing
+-- Oz tickets.
+--
+-- The Oz ticket endpoints can be run with Warp or embedded within
+-- another application.
+
 module Network.Oz.Application
   ( ozApp
   , OzServerOpts(..)
@@ -34,15 +40,19 @@ import Network.Oz.Server
 import qualified Network.Oz.Boom as Boom
 
 data OzServerOpts = OzServerOpts
-                    { ozSecret :: Key
-                    , ozLoadApp :: OzLoadApp
-                    , ozLoadGrant :: OzLoadGrant
-                    , ozTicketOpts :: TicketOpts
-                    , ozHawk :: Hawk.AuthReqOpts
-                    }
+  { ozSecret     :: Key -- ^ The password for encrypting Oz tickets
+  , ozLoadApp    :: OzLoadApp -- ^ Callback to look up registered apps
+  , ozLoadGrant  :: OzLoadGrant -- ^ Callback to look up grants
+  , ozTicketOpts :: TicketOpts -- ^ Ticket generation options
+  , ozHawk       :: Hawk.AuthReqOpts -- ^ Configuration of Hawk for this server
+  , ozEndpoints  :: Endpoints -- ^ URL route configuration of API endpoints
+  }
 
+-- | An empty Oz endpoint configuration. The password should be set to
+-- something secret.
 defaultOzServerOpts :: OzServerOpts
-defaultOzServerOpts = OzServerOpts "secret" defaultLoadApp defaultLoadGrant defaultTicketOpts Hawk.defaultAuthReqOpts
+defaultOzServerOpts = OzServerOpts "secret" defaultLoadApp defaultLoadGrant
+  defaultTicketOpts Hawk.defaultAuthReqOpts defaultEndpoints
 
 defaultLoadApp :: OzLoadApp
 defaultLoadApp _ = return $ Left "ozLoadApp not set"
@@ -50,13 +60,15 @@ defaultLoadApp _ = return $ Left "ozLoadApp not set"
 defaultLoadGrant :: OzLoadGrant
 defaultLoadGrant _ = return $ Left "ozLoadGrant not set"
 
+-- | Starts the 'Network.Wai.Application'.
 ozApp :: OzServerOpts -> IO Application
 ozApp OzServerOpts{..} = scottyApp $ do
   -- middleware $ hawkAuthMiddleware opts
   defaultHandler Boom.errHandler
-  post "/oz/app" $ app >>= ejson
-  post "/oz/reissue" $ jsonData >>= reissue >>= json
-  post "/oz/rsvp" $ jsonData >>= rsvp >>= json
+  let post' r = post . literal . T.unpack . r $ ozEndpoints
+  post' endpointApp     $ app >>= ejson
+  post' endpointReissue $ jsonData >>= reissue >>= json
+  post' endpointRsvp    $ jsonData >>= rsvp >>= json
   where
     app :: ActionM (Either String OzSealedTicket)
     app = do

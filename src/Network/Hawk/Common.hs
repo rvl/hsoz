@@ -11,8 +11,8 @@ module Network.Hawk.Common
        , HawkType(..)
        , AuthResult
        , AuthResult'(..)
-       , AuthFail(..)
        , AuthSuccess(..)
+       , AuthFail(..)
        , Authorization
        ) where
 
@@ -35,27 +35,34 @@ import Network.Iron.Util (fixedTimeEq)
 data HawkType = HawkHeader | HawkBewit | HawkResponse
               deriving (Show, Eq)
 
+-- | The end result of authentication.
 type AuthResult = AuthResult' AuthSuccess
+-- | An intermediate result of authentication.
 type AuthResult' a = Either AuthFail a
 
+-- | Authentication can fail in multiple ways. This type includes the
+-- information necessary to generate a suitable response for the
+-- client. In the case of a stale timestamp, the client may try
+-- another authenticated request.
 data AuthFail = AuthFailBadRequest String (Maybe ServerAuthArtifacts)
               | AuthFailUnauthorized String (Maybe ServerCredentials) (Maybe ServerAuthArtifacts)
               | AuthFailStaleTimeStamp String ServerCredentials ServerAuthArtifacts
               deriving Show
 
+-- | The result of a successful authentication is a set of credentials
+-- and "artifacts".
 data AuthSuccess = AuthSuccess ServerCredentials ServerAuthArtifacts deriving Show
 
+-- | The value of an @Authorization@ header.
 type Authorization = ByteString
 
 -- | Generates a @hawk.1.@ string with the given attributes,
 -- calculates its HMAC, and returns the Base64 encoded hash.
--- fixme: Corresponds to calculateMac in crypto.js. make sure it
--- supports all options from original function/
-calculateMac :: HawkAlgoCls a => Key -> a
-             -> HawkType -> POSIXTime -> ByteString -> Method
+calculateMac :: HawkAlgoCls a => a -> Key
+             -> POSIXTime -> ByteString -> Method
              -> ByteString -> ByteString -> Maybe Int
-             -> ByteString
-calculateMac key a hawkType ts nonce method path host port = hawkMac a key str
+             -> HawkType -> ByteString
+calculateMac a key ts nonce method path host port hawkType = hawkMac a key str
   where
     str = hawk1String hawkType ts nonce method path host port
 
@@ -117,6 +124,9 @@ hawkType HawkResponse = "response"
 
 hawk1Header = hawk1String HawkHeader
 
+-- Generates an @Authorization@ header string of the form:
+-- Hawk id="app123", ts="1476130687", nonce="+olvVyT7i8dqkA==",
+--   mac="xG9KhUQXjCSWbqNbRI41tI19+fG0upsuDoVbNpt8+K0=", app="app123"
 hawkHeaderString :: [(ByteString, ByteString)] -> ByteString
 hawkHeaderString items = BL.toStrict $ toLazyByteString bld
   where

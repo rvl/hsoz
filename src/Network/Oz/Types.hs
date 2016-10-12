@@ -18,6 +18,9 @@ module Network.Oz.Types
 
   , OzLoadApp
   , OzLoadGrant
+
+  , Endpoints(..)
+  , defaultEndpoints
   ) where
 
 import GHC.Generics
@@ -175,3 +178,14 @@ type OzLoadApp = OzAppId -> IO (Either String OzApp)
 
 -- | User-supplied function to look up an Oz grant by its identifier.
 type OzLoadGrant = OzGrantId -> IO (Either String (OzGrant, OzExt))
+
+-- | Describes the URL configuration of the Oz server.
+data Endpoints = Endpoints
+  { endpointApp     :: Text
+  , endpointReissue :: Text
+  , endpointRsvp    :: Text
+  } deriving Show
+
+-- | A normal set of endpoint URL paths.
+defaultEndpoints :: Endpoints
+defaultEndpoints = Endpoints "/oz/app" "/oz/reissue" "/oz/rsvp"

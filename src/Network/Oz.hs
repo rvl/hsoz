@@ -16,6 +16,8 @@
 -- application. The endpoints will handle issuing tickets.
 --
 -- 'Network.Oz.Server.authenticateRequest' checks tickets.
+--
+-- Please note that this module is under construction.
 
 module Network.Oz
   ( module Network.Oz.Types

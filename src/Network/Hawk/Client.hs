@@ -2,6 +2,9 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE RecordWildCards #-}
 
+-- | Functions for making Hawk-authenticated request headers and
+-- verifying responses from the server.
+
 module Network.Hawk.Client
        ( header
        , headerOz
@@ -9,6 +12,8 @@ module Network.Hawk.Client
        , ServerAuthorizationCheck(..)
        , Credentials(..)
        , Header(..)
+       , Authorization
+       , ClientHeaderArtifacts
        , module Network.Hawk.Types
        ) where
 
@@ -52,7 +57,8 @@ data Credentials = Credentials
   } deriving (Show, Generic)
 
 -- | Struct for attributes which will be encoded in the Hawk
--- @Authorization@ header.
+-- @Authorization@ header. The term "artifacts" comes from the
+-- original Javascript implementation of Hawk.
 data ClientHeaderArtifacts = ClientHeaderArtifacts
   { chaTimestamp :: POSIXTime
   , chaNonce :: ByteString
@@ -105,20 +111,22 @@ clientHeaderArtifacts now nonce method url hash ext app dlg = case splitUrl url 
     ClientHeaderArtifacts now nonce method "" Nothing url hash ext app dlg
 
 clientHawkAuth :: Credentials -> ClientHeaderArtifacts -> ByteString
-clientHawkAuth creds ClientHeaderArtifacts{..} = hawkHeaderString (hawkHeaderItems items)
+clientHawkAuth creds arts@ClientHeaderArtifacts{..} = hawkHeaderString (hawkHeaderItems items)
   where
     items = [ ("id", (Just . encodeUtf8 . ccId) creds)
             , ("ts", (Just . S8.pack . show . round) chaTimestamp)
             , ("nonce", Just chaNonce)
             , ("hash", chaHash)
             , ("ext", chaExt)
-            , ("mac", Just mac)
+            , ("mac", Just $ clientMac creds arts HawkHeader)
             , ("app", encodeUtf8 <$> chaApp)
             , ("dlg", encodeUtf8 <$> chaDlg)
             ]
-    algo = ccAlgorithm creds
-    mac = calculateMac (ccKey creds) algo HawkHeader chaTimestamp chaNonce
-          chaMethod chaResource chaHost chaPort
+
+clientMac :: Credentials -> ClientHeaderArtifacts -> HawkType -> ByteString
+clientMac Credentials{..} ClientHeaderArtifacts{..} =
+  calculateMac ccAlgorithm ccKey
+      chaTimestamp chaNonce chaMethod chaResource chaHost chaPort
 
 hawkHeaderItems :: [(ByteString, Maybe ByteString)] -> [(ByteString, ByteString)]
 hawkHeaderItems = catMaybes . map pull
@@ -152,7 +160,7 @@ data ServerAuthorizationCheck = ServerAuthorizationNotRequired
                               | ServerAuthorizationRequired
                               deriving Show
 
--- | Validates the server response
+-- | Validates the server response.
 authenticate :: Response BL.ByteString -> Credentials -> ClientHeaderArtifacts
                       -> Maybe BL.ByteString -> ServerAuthorizationCheck
                       -> IO (Either String ())
@@ -213,10 +221,11 @@ checkServerAuthorizationHeader :: Credentials -> ClientHeaderArtifacts
                                   -> Either String (Maybe ServerAuthorizationReplyHeader)
 checkServerAuthorizationHeader _ _ ServerAuthorizationNotRequired _ Nothing = Right Nothing
 checkServerAuthorizationHeader _ _ ServerAuthorizationRequired _ Nothing = Left "Missing Server-Authorization header"
-checkServerAuthorizationHeader Credentials{..} ClientHeaderArtifacts{..} _ now (Just sa) = do
+checkServerAuthorizationHeader creds arts _ now (Just sa) = do
   sarh <- parseServerAuthorizationReplyHeader sa
-  let mac = calculateMac ccKey ccAlgorithm HawkResponse chaTimestamp chaNonce chaMethod chaResource chaHost chaPort
-  if (sarhMac sarh `fixedTimeEq` mac) then Right (Just sarh)
+  let mac = clientMac creds arts HawkResponse
+  if sarhMac sarh `fixedTimeEq` mac
+    then Right (Just sarh)
     else Left "Bad response mac"
 
 ----------------------------------------------------------------------------

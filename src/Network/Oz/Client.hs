@@ -3,6 +3,9 @@
 module Network.Oz.Client
   ( header
   , withSession
+  , reissue
+  , Endpoints(..)
+  , defaultEndpoints
   ) where
 
 import Data.ByteString (ByteString)
@@ -37,14 +40,7 @@ header uri method t@OzSealedTicket{..} = Hawk.header uri method creds Nothing No
 ticketCreds :: OzSealedTicket -> Hawk.Credentials
 ticketCreds OzSealedTicket{..} = Hawk.Credentials ozTicketId ozTicketKey ozTicketAlgorithm
 
-data Endpoints = Endpoints
-  { endpointApp :: Text
-  , endpointReissue :: Text
-  } deriving Show
-
-defaultEndpoints :: Endpoints
-defaultEndpoints = Endpoints "/oz/app" "/oz/reissue"
-
+-- | Work in progress.
 withSession :: Endpoints -> Text -> Hawk.Credentials -> (Session -> IO a) -> IO a
 withSession ep uri creds act = do
   ref <- newIORef (Nothing :: Maybe OzTicket)

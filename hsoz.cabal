@@ -31,7 +31,7 @@ description:
   * Use of the "Data.SecureMem" package for hash equality comparisons.
   * Iron password lookup by ID.
   * Hawk bewits.
-  * A decent client API for Oz.
+  * A decent client API and ticket endpoints for Oz.
   * Production testing in a real-world application.
   .
   == Introduction

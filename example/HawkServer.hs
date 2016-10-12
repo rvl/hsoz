@@ -35,7 +35,6 @@ app req respond = do
       let ext = decodeUtf8 <$> shaExt artifacts
       let payload = textPayload $ "Hello " <> scUser creds <> maybe "" (" " <>) ext
       let autho = Hawk.header creds artifacts (Just payload)
-      -- responseLBS $ status200 [payloadCt payload, autho] (payloadData payload)
       responseLBS status200 [payloadCt payload, autho] (payloadData payload)
     Left (Hawk.AuthFailBadRequest e _) -> responseLBS badRequest400 [] (lazyString e)
     Left (Hawk.AuthFailUnauthorized _ _ _) -> responseLBS unauthorized401 [plain] "Shoosh!"
