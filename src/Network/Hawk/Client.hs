@@ -1,0 +1,261 @@
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE RecordWildCards #-}
+
+module Network.Hawk.Client
+       ( header
+       , headerOz
+       , authenticate
+       , ServerAuthorizationCheck(..)
+       , Credentials(..)
+       , Header(..)
+       , module Network.Hawk.Types
+       ) where
+
+import GHC.Generics
+import Data.Text (Text)
+import qualified Data.Text as T
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString.Char8 as S8
+import qualified Data.Map as M
+import Data.Time.Clock.POSIX
+import Data.Time.Clock (NominalDiffTime)
+import qualified Data.ByteString.Base64 as B64
+import Crypto.Random
+import qualified Data.ByteArray as BA (unpack)
+import Crypto.Hash
+import Network.Wreq hiding (header)
+import Network.HTTP.Types.Method (Method)
+import Network.HTTP.Types.Header (hContentType, hWWWAuthenticate)
+import Network.HTTP.Types.URI (extractPath)
+import Data.CaseInsensitive (CI(..))
+import Network.Socket (SockAddr(..), PortNumber)
+import URI.ByteString (parseURI, laxURIParserOptions, uriAuthority, authorityHost, hostBS, authorityPort, portNumber)
+import Data.Text.Encoding (encodeUtf8)
+import Control.Monad (join)
+import Data.Maybe (catMaybes)
+import Control.Monad.IO.Class (MonadIO, liftIO)
+import Control.Lens ((^.), (^?))
+
+import Network.Iron.Util
+import Network.Hawk.Common
+import Network.Hawk.Util
+import Network.Hawk.Types
+
+-- | ID and key used for encrypting Hawk @Authorization@ header.
+data Credentials = Credentials
+  { ccId :: ClientId
+  , ccKey :: Key
+  , ccAlgorithm :: HawkAlgo
+  } deriving (Show, Generic)
+
+-- | Struct for attributes which will be encoded in the Hawk
+-- @Authorization@ header.
+data ClientHeaderArtifacts = ClientHeaderArtifacts
+  { chaTimestamp :: POSIXTime
+  , chaNonce :: ByteString
+  , chaMethod :: Method
+  , chaHost :: ByteString
+  , chaPort :: Maybe Int
+  , chaResource :: ByteString
+  , chaHash :: Maybe ByteString
+  , chaExt :: Maybe ByteString -- fixme: this should be json value
+  , chaApp :: Maybe Text -- ^ app id, for oz
+  , chaDlg :: Maybe Text -- ^ delegated-by app id, for oz
+  } deriving Show
+
+-- | The result of Hawk header generation.
+data Header = Header
+  { hdrField :: Authorization  -- ^ Value of @Authorization@ header.
+  , hdrArtifacts :: ClientHeaderArtifacts  -- ^ Not sure if this is needed by users.
+  } deriving (Show, Generic)
+
+-- | Generates the Hawk authentication header for a request.
+header :: Text -> Method -> Credentials -> Maybe PayloadInfo -> Maybe Text -> IO Header
+header url method creds payload ext = headerBase url method creds payload ext Nothing Nothing
+
+-- | Generates the Hawk authentication header for an Oz request. Oz
+-- requires another attribute -- the application id. It also has an
+-- optional delegated-by attribute, which is the application id of the
+-- application the credentials were directly issued to.
+headerOz :: Text -> Method -> Credentials -> Maybe PayloadInfo -> Maybe Text
+         -> Text -> Maybe Text -> IO Header
+headerOz url method creds payload ext app dlg = headerBase url method creds payload ext (Just app) dlg
+
+headerBase :: Text -> Method -> Credentials -> Maybe PayloadInfo -> Maybe Text
+           -> Maybe Text -> Maybe Text -> IO Header
+headerBase url method creds payload ext app dlg = do
+  now <- getPOSIXTime
+  nonce <- genNonce
+  let hash = calculatePayloadHash (ccAlgorithm creds) <$> payload
+  let art = clientHeaderArtifacts now nonce method (encodeUtf8 url) hash (encodeUtf8 <$> ext) app dlg
+  let auth = clientHawkAuth creds art
+  return $ Header auth art
+
+clientHeaderArtifacts :: POSIXTime -> ByteString -> Method -> ByteString
+                      -> Maybe ByteString -> Maybe ByteString
+                      -> Maybe Text -> Maybe Text
+                      -> ClientHeaderArtifacts
+clientHeaderArtifacts now nonce method url hash ext app dlg = case splitUrl url of
+  Just (SplitURL host port resource) ->
+    ClientHeaderArtifacts now nonce method host port resource hash ext app dlg
+  Nothing ->
+    ClientHeaderArtifacts now nonce method "" Nothing url hash ext app dlg
+
+clientHawkAuth :: Credentials -> ClientHeaderArtifacts -> ByteString
+clientHawkAuth creds ClientHeaderArtifacts{..} = hawkHeaderString (hawkHeaderItems items)
+  where
+    items = [ ("id", (Just . encodeUtf8 . ccId) creds)
+            , ("ts", (Just . S8.pack . show . round) chaTimestamp)
+            , ("nonce", Just chaNonce)
+            , ("hash", chaHash)
+            , ("ext", chaExt)
+            , ("mac", Just mac)
+            , ("app", encodeUtf8 <$> chaApp)
+            , ("dlg", encodeUtf8 <$> chaDlg)
+            ]
+    algo = ccAlgorithm creds
+    mac = calculateMac (ccKey creds) algo HawkHeader chaTimestamp chaNonce
+          chaMethod chaResource chaHost chaPort
+
+hawkHeaderItems :: [(ByteString, Maybe ByteString)] -> [(ByteString, ByteString)]
+hawkHeaderItems = catMaybes . map pull
+  where
+    pull (k, Just v) = Just (k, v)
+    pull (k, Nothing) = Nothing
+
+data SplitURL = SplitURL
+  { urlHost :: ByteString
+  , urlPort :: Maybe Int
+  , urlPath :: ByteString
+  } deriving (Show, Generic)
+
+splitUrl :: ByteString -> Maybe SplitURL
+splitUrl url = SplitURL <$> host <*> pure port <*> path
+  where
+    p = either (const Nothing) uriAuthority (parseURI laxURIParserOptions url)
+    host = fmap (hostBS . authorityHost) p
+    port :: Maybe Int
+    port = fmap portNumber $ p >>= authorityPort
+    path = fmap (const (extractPath url)) p
+
+genNonce :: IO ByteString
+genNonce = do
+  g <- getSystemDRG
+  return $ fst $ withRandomBytes g 10 B64.encode
+
+-- | Whether the client wants to check the received
+-- @Server-Authorization@ header depends on the application.
+data ServerAuthorizationCheck = ServerAuthorizationNotRequired
+                              | ServerAuthorizationRequired
+                              deriving Show
+
+-- | Validates the server response
+authenticate :: Response BL.ByteString -> Credentials -> ClientHeaderArtifacts
+                      -> Maybe BL.ByteString -> ServerAuthorizationCheck
+                      -> IO (Either String ())
+authenticate r creds artifacts payload saCheck = do
+  now <- getPOSIXTime
+  return $ clientAuthenticate' r creds artifacts payload saCheck now
+
+clientAuthenticate' :: Response BL.ByteString -> Credentials -> ClientHeaderArtifacts
+                       -> Maybe BL.ByteString -> ServerAuthorizationCheck
+                       -> POSIXTime -> Either String ()
+clientAuthenticate' r creds artifacts payload saCheck now = do
+  let w = r ^? responseHeader hWWWAuthenticate
+  ts <- mapM (checkWwwAuthenticateHeader creds) w
+  let sa = r ^? responseHeader hServerAuthorization
+  sarh <- checkServerAuthorizationHeader creds artifacts saCheck now sa
+  let ct = r ^. responseHeader hContentType
+  let payload' = PayloadInfo ct <$> payload
+  case sarh of
+    Just sarh' -> checkPayloadHash (ccAlgorithm creds) (sarhHash sarh') payload'
+    Nothing -> Right ()
+
+-- | The protocol relies on a clock sync between the client and
+-- server. To accomplish this, the server informs the client of its
+-- current time when an invalid timestamp is received.
+--
+-- If an attacker is able to manipulate this information and cause the
+-- client to use an incorrect time, it would be able to cause the
+-- client to generate authenticated requests using time in the
+-- future. Such requests will fail when sent by the client, and will
+-- not likely leave a trace on the server (given the common
+-- implementation of nonce, if at all enforced). The attacker will
+-- then be able to replay the request at the correct time without
+-- detection.
+--
+-- The client must only use the time information provided by the
+-- server if:
+--
+-- * it was delivered over a TLS connection and the server identity
+--   has been verified, or
+-- * the `tsm` MAC digest calculated using the same client credentials
+--   over the timestamp has been verified.
+--
+-- fixme: implement checks for both of the above conditions
+checkWwwAuthenticateHeader :: Credentials -> ByteString -> Either String POSIXTime
+checkWwwAuthenticateHeader creds w = do
+  WwwAuthenticateHeader{..} <- parseWwwAuthenticateHeader w
+  let tsm = calculateTsMac wahTs creds
+  if wahTsm `fixedTimeEq` tsm
+    then Right wahTs
+    else Left "Invalid server timestamp hash"
+
+calculateTsMac :: POSIXTime -> Credentials -> ByteString
+calculateTsMac = undefined  -- fixme: achtung minen
+
+checkServerAuthorizationHeader :: Credentials -> ClientHeaderArtifacts
+                                  -> ServerAuthorizationCheck -> POSIXTime
+                                  -> Maybe ByteString
+                                  -> Either String (Maybe ServerAuthorizationReplyHeader)
+checkServerAuthorizationHeader _ _ ServerAuthorizationNotRequired _ Nothing = Right Nothing
+checkServerAuthorizationHeader _ _ ServerAuthorizationRequired _ Nothing = Left "Missing Server-Authorization header"
+checkServerAuthorizationHeader Credentials{..} ClientHeaderArtifacts{..} _ now (Just sa) = do
+  sarh <- parseServerAuthorizationReplyHeader sa
+  let mac = calculateMac ccKey ccAlgorithm HawkResponse chaTimestamp chaNonce chaMethod chaResource chaHost chaPort
+  if (sarhMac sarh `fixedTimeEq` mac) then Right (Just sarh)
+    else Left "Bad response mac"
+
+----------------------------------------------------------------------------
+
+-- | Represents the `WWW-Authenticate` header which the server uses to
+-- respond when the client isn't authenticated.
+data WwwAuthenticateHeader = WwwAuthenticateHeader
+                             { wahTs    :: POSIXTime  -- ^ server's timestamp
+                             , wahTsm   :: ByteString -- ^ timestamp mac
+                             , wahError :: ByteString
+                             } deriving Show
+
+-- | Represents the `Server-Authorization` header which the server
+-- sends back to the client.
+data ServerAuthorizationReplyHeader = ServerAuthorizationReplyHeader
+                                      { sarhMac  :: ByteString
+                                      , sarhHash :: Maybe ByteString -- ^ optional payload hash
+                                      , sarhExt  :: Maybe ByteString
+                                      } deriving Show
+
+parseWwwAuthenticateHeader :: ByteString -> Either String WwwAuthenticateHeader
+parseWwwAuthenticateHeader = fmap snd . parseHeader wwwKeys wwwAuthHeader
+
+parseServerAuthorizationReplyHeader :: ByteString -> Either String ServerAuthorizationReplyHeader
+parseServerAuthorizationReplyHeader = fmap snd . parseHeader serverKeys serverAuthReplyHeader
+
+wwwKeys = ["tsm", "ts", "error"]
+serverKeys = ["mac", "ext", "hash"]
+
+wwwAuthHeader :: AuthAttrs -> Either String WwwAuthenticateHeader
+wwwAuthHeader m = do
+  credTs <- join (readTs <$> authAttr m "ts")
+  credTsm <- authAttr m "tsm"
+  credError <- authAttr m "error"
+  return $ WwwAuthenticateHeader credTs credTsm credError
+
+serverAuthReplyHeader :: AuthAttrs -> Either String ServerAuthorizationReplyHeader
+serverAuthReplyHeader m = do
+  mac <- authAttr m "mac"
+  let hash = authAttrMaybe m "hash"
+  let ext = authAttrMaybe m "ext"
+  return $ ServerAuthorizationReplyHeader mac hash ext

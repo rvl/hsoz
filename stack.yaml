@@ -1,0 +1,5 @@
+resolver: lts-7.0
+packages:
+- '.'
+nix:
+  packages: [zlib, openssl, ncurses, pkgconfig]
