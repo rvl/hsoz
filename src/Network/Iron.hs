@@ -1,7 +1,7 @@
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE RecordWildCards           #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
 
 -- | <<images/iron-logo.png>>
 --
@@ -60,34 +60,35 @@ module Network.Iron
   , urlSafeBase64
   ) where
 
-import Data.Aeson
-import qualified Data.Aeson as JSON (encode, eitherDecode')
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString.Char8 as S8
-import Data.Text (Text)
-import Text.Read (readMaybe)
-import Data.Time.Clock.POSIX
-import Data.Time.Clock (NominalDiffTime)
+import           Control.Monad          (liftM, when)
+import           Crypto.Cipher.AES      (AES128, AES256 (..))
+import           Crypto.Cipher.Types
+import           Crypto.Data.Padding
+import           Crypto.Error           (CryptoFailable (..), maybeCryptoError)
+import           Crypto.Hash.Algorithms (SHA256 (..))
+import           Crypto.Hash.Algorithms (SHA1 (..))
+import qualified Crypto.KDF.PBKDF2      as PBKDF2
+import           Crypto.MAC.HMAC        (Context, HMAC, finalize, hmac,
+                                         hmacGetDigest, initialize, updates)
+import           Crypto.Random
+import           Data.Aeson
+import qualified Data.Aeson             as JSON (eitherDecode', encode)
+import           Data.ByteString        (ByteString)
+import qualified Data.ByteString        as BS
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Base64 as B64
-import Crypto.Random
-import Crypto.MAC.HMAC (hmac, initialize, updates, finalize, Context, HMAC, hmacGetDigest)
-import Crypto.Hash.Algorithms (SHA256(..))
-import Crypto.Cipher.AES (AES128, AES256(..))
-import Crypto.Cipher.Types
-import Crypto.Data.Padding
-import Crypto.Hash.Algorithms (SHA1(..))
-import Crypto.Error (CryptoFailable(..), maybeCryptoError)
-import qualified Crypto.KDF.PBKDF2 as PBKDF2
-import Numeric (showHex)
-import Data.Text.Encoding (encodeUtf8, decodeUtf8)
-import qualified Data.Map as M
-import Data.Maybe (fromJust)
-import Control.Monad (when, liftM)
-import Data.Monoid ((<>))
-import Network.Iron.Util
+import qualified Data.ByteString.Char8  as S8
+import qualified Data.ByteString.Lazy   as BL
+import qualified Data.Map               as M
+import           Data.Maybe             (fromJust)
+import           Data.Monoid            ((<>))
+import           Data.Text              (Text)
+import           Data.Text.Encoding     (decodeUtf8, encodeUtf8)
+import           Data.Time.Clock        (NominalDiffTime)
+import           Data.Time.Clock.POSIX
+import           Network.Iron.Util
+import           Numeric                (showHex)
+import           Text.Read              (readMaybe)
 
 {-
 unimplemented:
@@ -99,10 +100,10 @@ todo:
 -}
 
 data Options = Options
-  { ironEncryption :: EncryptionOpts -- ^ Encryption options
-  , ironIntegrity :: IntegrityOpts  -- ^ Message integrity verification options
-  , ironTTL :: NominalDiffTime -- ^ Message lifetime in seconds
-  , ironTimestampSkew :: NominalDiffTime -- ^ Clock difference allowance in seconds
+  { ironEncryption      :: EncryptionOpts -- ^ Encryption options
+  , ironIntegrity       :: IntegrityOpts  -- ^ Message integrity verification options
+  , ironTTL             :: NominalDiffTime -- ^ Message lifetime in seconds
+  , ironTimestampSkew   :: NominalDiffTime -- ^ Clock difference allowance in seconds
   , ironLocaltimeOffset :: NominalDiffTime -- ^ Clock offset in seconds
   } deriving Show
 
@@ -137,16 +138,16 @@ data IronSalt = IronSalt ByteString -- ^ Supply pre-generated salt
 
 -- | Options controlling encryption of Iron messages.
 data EncryptionOpts = EncryptionOpts
-  { ieSalt :: IronSalt -- ^ Salt for password-based key generation
-  , ieAlgorithm :: IronCipher -- ^ Encryption algorithm
+  { ieSalt       :: IronSalt -- ^ Salt for password-based key generation
+  , ieAlgorithm  :: IronCipher -- ^ Encryption algorithm
   , ieIterations :: Int -- ^ Number of iterations for password-based key generation
-  , ieIV :: Maybe ByteString -- ^ Pre-generated initial value block
+  , ieIV         :: Maybe ByteString -- ^ Pre-generated initial value block
   } deriving Show
 
 -- | Options controlling cryptographic verification of Iron messages.
 data IntegrityOpts = IntegrityOpts
-  { iiSalt :: IronSalt -- ^ Salt for MAC key generation
-  , iiAlgorithm :: IronMAC -- ^ Hash-based MAC algorithm
+  { iiSalt       :: IronSalt -- ^ Salt for MAC key generation
+  , iiAlgorithm  :: IronMAC -- ^ Hash-based MAC algorithm
   , iiIterations :: Int -- ^ Number of iterations for MAC key generation
   } deriving Show
 
@@ -188,14 +189,14 @@ data Passwords = OnePassword ByteString
                | Passwords ByteString ByteString
 
 passwordId :: Password -> ByteString
-passwordId (Password _) = ""
+passwordId (Password _)      = ""
 passwordId (PasswordId id _) = id
 
 encPassword, intPassword :: Password -> ByteString
-encPassword (Password p) = p
+encPassword (Password p)                   = p
 encPassword (PasswordId _ (OnePassword p)) = p
 encPassword (PasswordId _ (Passwords p _)) = p
-intPassword (Password p) = p
+intPassword (Password p)                   = p
 intPassword (PasswordId _ (OnePassword p)) = p
 intPassword (PasswordId _ (Passwords _ p)) = p
 
@@ -215,9 +216,9 @@ sealWith opts p v = do
 -- | Variables necessary for sealing whose values come from the
 -- IO world.
 data SealStuff = SealStuff
-  { ssNow :: POSIXTime
+  { ssNow     :: POSIXTime
   , ssEncSalt :: ByteString
-  , ssIv :: ByteString
+  , ssIv      :: ByteString
   , ssIntSalt :: ByteString
   } deriving (Show)
 
@@ -267,15 +268,15 @@ seal' opts SealStuff{..} sec = fmap (strCookie . mac . strEncCookie) . encrypt
 
 data EncCookie = EncCookie
   { ckPasswordId :: ByteString
-  , ckEncSalt :: ByteString
-  , ckIv :: ByteString
+  , ckEncSalt    :: ByteString
+  , ckIv         :: ByteString
   , ckExpiration :: Maybe NominalDiffTime
-  , ckText :: ByteString
+  , ckText       :: ByteString
   } deriving Show
 
 data Cookie = Cookie
-  { ckEnc :: ByteString
-  , ckIntSalt :: ByteString
+  { ckEnc       :: ByteString
+  , ckIntSalt   :: ByteString
   , ckIntDigest :: ByteString
   } deriving Show
 
@@ -395,7 +396,7 @@ unseal' opts now sec cookie = do
   ok <- verify ck
   case decrypt eck of
     Just ctext -> JSON.eitherDecode' (BL.fromStrict ctext)
-    Nothing -> Left "Iron decryption failed"
+    Nothing    -> Left "Iron decryption failed"
   where
     decrypt :: EncCookie -> Maybe ByteString
     decrypt EncCookie{..} = text
@@ -425,7 +426,7 @@ unseal' opts now sec cookie = do
     getPassword opts pid password = Right password
 
 isExpired :: POSIXTime -> NominalDiffTime -> Maybe POSIXTime -> Bool
-isExpired _ _ Nothing = False
+isExpired _ _ Nothing         = False
 isExpired now skew (Just exp) = exp <= (now - skew)
 
 genSalt :: DRG gen => Int -> gen -> (ByteString, gen)
@@ -435,11 +436,11 @@ genIV :: DRG gen => Int -> gen -> (ByteString, gen)
 genIV size gen = withRandomBytes gen size id
 
 genSaltMaybe :: DRG gen => IronSalt -> gen -> (ByteString, gen)
-genSaltMaybe (IronSalt salt) = \gen -> (salt, gen)
+genSaltMaybe (IronSalt salt)   = \gen -> (salt, gen)
 genSaltMaybe (IronGenSalt len) = genSalt len
 
 genIVMaybe :: DRG gen => IronCipher -> Maybe ByteString -> gen -> (ByteString, gen)
-genIVMaybe _ (Just iv) = \gen -> (iv, gen)
+genIVMaybe _ (Just iv)  = \gen -> (iv, gen)
 genIVMaybe algo Nothing = genIV (ivSize algo)
 
 macPrefix, macFormatVersion :: ByteString

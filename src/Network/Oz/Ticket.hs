@@ -1,30 +1,31 @@
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 
 module Network.Oz.Ticket
   ( issueTicket
   , parseTicket
   ) where
 
-import Data.Text (Text)
-import qualified Data.Text as T
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-import Data.Text.Encoding (decodeUtf8)
-import Data.Time.Clock.POSIX (POSIXTime, getPOSIXTime)
-import Control.Monad.IO.Class (liftIO, MonadIO(..))
-import Control.Monad (void, liftM)
-import Data.List (isInfixOf, nub)
-import Data.Aeson (object, Value(..), Object(..), toJSON)
-import Crypto.Random
+import           Control.Monad          (liftM, void)
+import           Control.Monad.IO.Class (MonadIO (..), liftIO)
+import           Crypto.Random
+import           Data.Aeson             (Object (..), Value (..), object,
+                                         toJSON)
+import           Data.ByteString        (ByteString)
+import qualified Data.ByteString        as BS
 import qualified Data.ByteString.Base64 as B64
-import Data.Maybe (catMaybes, fromMaybe)
+import           Data.List              (isInfixOf, nub)
+import           Data.Maybe             (catMaybes, fromMaybe)
+import           Data.Text              (Text)
+import qualified Data.Text              as T
+import           Data.Text.Encoding     (decodeUtf8)
+import           Data.Time.Clock.POSIX  (POSIXTime, getPOSIXTime)
 
-import Network.Oz.Types
-import Network.Oz.JSON
-import Network.Hawk.Types
-import qualified Network.Iron as Iron
+import           Network.Hawk.Types
+import qualified Network.Iron           as Iron
+import           Network.Oz.JSON
+import           Network.Oz.Types
 
 issueTicket :: MonadIO m => OzApp -> ServerCredentials -> Maybe OzGrant -> Key -> TicketOpts -> m (Maybe OzSealedTicket)
 issueTicket app creds mgrant password opts = do
@@ -61,7 +62,7 @@ issueTicket app creds mgrant password opts = do
     getExpiry ttl mgrant now = maybe id (min . ozGrantExp) mgrant (now + ttl)
 
 leftFail :: Monad m => Either String a -> m a
-leftFail (Left e) = fail e
+leftFail (Left e)  = fail e
 leftFail (Right a) = return a
 
 randomKey :: TicketOpts -> IO ByteString

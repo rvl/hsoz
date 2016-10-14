@@ -23,4 +23,4 @@ module Network.Oz
   ( module Network.Oz.Types
   ) where
 
-import Network.Oz.Types
+import           Network.Oz.Types

@@ -23,17 +23,17 @@ module Network.Oz.Types
   , defaultEndpoints
   ) where
 
-import GHC.Generics
-import Data.Text (Text)
-import Data.ByteString (ByteString)
-import Data.Time.Clock.POSIX (POSIXTime)
-import Data.Aeson (Object)
-import Data.Time.Clock (NominalDiffTime)
-import Crypto.Hash.Algorithms (SHA256(..))
+import           Crypto.Hash.Algorithms (SHA256 (..))
+import           Data.Aeson             (Object)
+import           Data.ByteString        (ByteString)
+import           Data.Text              (Text)
+import           Data.Time.Clock        (NominalDiffTime)
+import           Data.Time.Clock.POSIX  (POSIXTime)
+import           GHC.Generics
 
-import Network.Hawk (HawkAlgo)
-import Network.Hawk.Types
-import qualified Network.Iron as Iron (Options, defaults)
+import           Network.Hawk           (HawkAlgo)
+import           Network.Hawk.Types
+import qualified Network.Iron           as Iron (Options, defaults)
 
 -- | Identifies an Oz Application
 type OzAppId = Text
@@ -51,15 +51,15 @@ type OzTicketId = Text
 
 -- | An object describing an application.
 data OzApp = OzApp
-  { ozAppId :: OzAppId  -- ^ The application identifier
+  { ozAppId        :: OzAppId  -- ^ The application identifier
 
   -- | An array with the default application scope.
-  , ozAppScope :: Maybe OzScope
+  , ozAppScope     :: Maybe OzScope
   -- | If true, the application is allowed to delegate a
   -- ticket to another application. Defaults to false.
-  , ozAppDelegate :: Bool
+  , ozAppDelegate  :: Bool
   -- | The shared secret used to authenticate.
-  , ozAppKey :: Key
+  , ozAppKey       :: Key
   -- | The HMAC algorithm used to authenticate.
   , ozAppAlgorithm :: HawkAlgo
   } deriving (Show, Generic)
@@ -69,14 +69,14 @@ data OzApp = OzApp
 -- database (usually to support revocation) or can be self describing
 -- (using an encoded identifier).
 data OzGrant = OzGrant
-  { ozGrantId :: OzGrantId  -- ^ The grant identifier
+  { ozGrantId    :: OzGrantId  -- ^ The grant identifier
 
   -- | The application identifier.
-  , ozGrantApp :: OzAppId
+  , ozGrantApp   :: OzAppId
   -- | The user identifier.
-  , ozGrantUser :: OzUserId
+  , ozGrantUser  :: OzUserId
   -- | Grant expiration time
-  , ozGrantExp :: POSIXTime
+  , ozGrantExp   :: POSIXTime
   -- | An array with the scope granted by the user to the application.
   , ozGrantScope :: Maybe OzScope
   } deriving (Show, Generic)
@@ -86,7 +86,7 @@ data OzGrant = OzGrant
 -- ticket.ext. The private part is only available within the encoded
 -- ticket.
 data OzExt = OzExt
-             { ozExtPublic :: Object -- ^ Public ext; included in response
+             { ozExtPublic  :: Object -- ^ Public ext; included in response
              , ozExtPrivate :: Object -- ^ Private ext; only in encoded ticket.
              } deriving (Show, Generic)
 
@@ -100,11 +100,11 @@ instance Monoid OzExt where
 -- Unlike most Hawk credential identifiers, the Oz ticket identifier
 -- is an encoded Iron string which when decoded contains an 'OzTicket'
 data OzSealedTicket = OzSealedTicket
-  { ozTicket :: OzTicket
-  , ozTicketKey :: Key -- ^ A shared secret used to authenticate.
+  { ozTicket          :: OzTicket
+  , ozTicketKey       :: Key -- ^ A shared secret used to authenticate.
   , ozTicketAlgorithm :: HawkAlgo -- ^ The HMAC algorithm used to authenticate (e.g. HMAC-SHA256).
-  , ozTicketExt :: Object -- ^ Custom server public data attached to the ticket.
-  , ozTicketId :: OzTicketId  -- ^ The ticket identifier used for making authenticated Hawk requests.
+  , ozTicketExt       :: Object -- ^ Custom server public data attached to the ticket.
+  , ozTicketId        :: OzTicketId  -- ^ The ticket identifier used for making authenticated Hawk requests.
   } deriving (Show, Generic)
 
 -- | An object describing a ticket and its public properties.  An Oz
@@ -112,24 +112,24 @@ data OzSealedTicket = OzSealedTicket
 -- access protected resources. Just like any other Hawk credentials.
 data OzTicket = OzTicket {
   -- | Ticket expiration time.
-    ozTicketExp :: POSIXTime
+    ozTicketExp      :: POSIXTime
   -- | The application id the ticket was issued to.
-  , ozTicketApp :: OzAppId
+  , ozTicketApp      :: OzAppId
 
   -- | The user id if the ticket represents access to
   -- user resources. If no user id is included, the
   -- ticket allows the application access to the
   -- application own resources only.
-  , ozTicketUser :: Maybe OzUserId
+  , ozTicketUser     :: Maybe OzUserId
   -- | The ticket scope. Defaults to @[]@ if no scope is
   -- specified.
-  , ozTicketScope :: OzScope
+  , ozTicketScope    :: OzScope
   -- | If user is set, includes the grant identifier
   -- referencing the authorization granted by the user
   -- to the application. Can be a unique identifier or
   -- string encoding the grant information as long as
   -- the server is able to parse the information later.
-  , ozTicketGrant :: Maybe OzGrantId
+  , ozTicketGrant    :: Maybe OzGrantId
   -- | If false, the ticket cannot be delegated
   -- regardless of the application permissions. Defaults
   -- to true which means use the application permissions
@@ -137,7 +137,7 @@ data OzTicket = OzTicket {
   , ozTicketDelegate :: Bool
   -- | If the ticket is the result of access delegation,
   -- the application id of the delegating application.
-  , ozTicketDlg :: Maybe OzAppId
+  , ozTicketDlg      :: Maybe OzAppId
   } deriving (Show, Generic)
 
 

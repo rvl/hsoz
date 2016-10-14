@@ -1,22 +1,22 @@
 module HawkClient where
 
-import Network.Wreq
-import Control.Lens
-import Control.Exception as E
-import Network.HTTP.Client (HttpException(..))
-import Network.HTTP.Types.Header (hAuthorization)
-import Data.Text.Encoding (encodeUtf8, decodeUtf8)
-import qualified Data.Map as M
-import qualified Data.Text as T
-import Data.ByteString (ByteString)
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString.Char8 as S8
-import Control.Monad (void)
-import Data.Either (isRight)
+import           Control.Exception         as E
+import           Control.Lens
+import           Control.Monad             (void)
+import           Data.ByteString           (ByteString)
+import qualified Data.ByteString.Char8     as S8
+import qualified Data.ByteString.Lazy      as BL
+import           Data.Either               (isRight)
+import qualified Data.Map                  as M
+import qualified Data.Text                 as T
+import           Data.Text.Encoding        (decodeUtf8, encodeUtf8)
+import           Network.HTTP.Client       (HttpException (..))
+import           Network.HTTP.Types.Header (hAuthorization)
+import           Network.Wreq
 
-import Network.Hawk
-import qualified Network.Hawk.Client as Hawk
-import Common
+import           Common
+import           Network.Hawk
+import qualified Network.Hawk.Client       as Hawk
 
 clientMain :: IO ()
 clientMain = void $ clientAuth creds uri -- `E.catch` handler

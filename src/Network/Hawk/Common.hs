@@ -16,21 +16,23 @@ module Network.Hawk.Common
        , Authorization
        ) where
 
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString.Char8 as S8
-import Data.ByteString.Builder (byteString, charUtf8, toLazyByteString)
-import Data.Time.Clock.POSIX
-import Network.HTTP.Types.Method (Method)
-import Network.HTTP.Types.Header (HeaderName)
-import Crypto.Hash.Algorithms (SHA1(..), SHA256(..), HashAlgorithm)
-import Data.List (intercalate)
-import Data.Monoid ((<>))
-import Data.Char (toLower, toUpper)
+import           Crypto.Hash.Algorithms    (HashAlgorithm, SHA1 (..),
+                                            SHA256 (..))
+import           Data.ByteString           (ByteString)
+import qualified Data.ByteString           as BS
+import           Data.ByteString.Builder   (byteString, charUtf8,
+                                            toLazyByteString)
+import qualified Data.ByteString.Char8     as S8
+import qualified Data.ByteString.Lazy      as BL
+import           Data.Char                 (toLower, toUpper)
+import           Data.List                 (intercalate)
+import           Data.Monoid               ((<>))
+import           Data.Time.Clock.POSIX
+import           Network.HTTP.Types.Header (HeaderName)
+import           Network.HTTP.Types.Method (Method)
 
-import Network.Hawk.Types
-import Network.Iron.Util (fixedTimeEq)
+import           Network.Hawk.Types
+import           Network.Iron.Util         (fixedTimeEq)
 
 data HawkType = HawkHeader | HawkBewit | HawkResponse
               deriving (Show, Eq)
@@ -88,9 +90,9 @@ checkPayloadHashMaybe algo (Just hash) (Just payload) = Just (hash == calculateP
 
 checkPayloadHash :: HawkAlgoCls a => a -> Maybe ByteString -> Maybe PayloadInfo -> Either String ()
 checkPayloadHash algo hash payload = case checkPayloadHashMaybe algo hash payload of
-  Nothing -> Left "Missing response hash attribute"
+  Nothing    -> Left "Missing response hash attribute"
   Just False -> Left "Bad response payload mac"
-  Just True -> Right ()
+  Just True  -> Right ()
 
 hawk1String :: HawkType -> POSIXTime -> ByteString -> Method -> ByteString -> ByteString -> Maybe Int -> ByteString
 -- corresponds to generateNormalizedString in crypto.js

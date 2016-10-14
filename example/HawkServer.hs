@@ -1,23 +1,23 @@
 module HawkServer where
 
-import Network.Wai
-import Network.Wai.Handler.Warp
-import Network.HTTP.Types.Status
-import Network.HTTP.Types.Header
-import Data.Text (Text)
-import qualified Data.Text as T
-import Data.ByteString (ByteString)
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString.Char8 as S8
-import qualified Data.Map as M
-import Data.Text.Encoding (encodeUtf8, decodeUtf8)
-import Data.Monoid
-import Data.Monoid
-import Control.Monad.IO.Class (liftIO)
+import           Control.Monad.IO.Class    (liftIO)
+import           Data.ByteString           (ByteString)
+import qualified Data.ByteString.Char8     as S8
+import qualified Data.ByteString.Lazy      as BL
+import qualified Data.Map                  as M
+import           Data.Monoid
+import           Data.Monoid
+import           Data.Text                 (Text)
+import qualified Data.Text                 as T
+import           Data.Text.Encoding        (decodeUtf8, encodeUtf8)
+import           Network.HTTP.Types.Header
+import           Network.HTTP.Types.Status
+import           Network.Wai
+import           Network.Wai.Handler.Warp
 
-import Network.Hawk
-import qualified Network.Hawk.Server as Hawk
-import Common
+import           Common
+import           Network.Hawk
+import qualified Network.Hawk.Server       as Hawk
 
 serverMain :: IO ()
 serverMain = run 8000 app

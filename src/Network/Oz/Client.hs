@@ -8,25 +8,27 @@ module Network.Oz.Client
   , defaultEndpoints
   ) where
 
-import Data.ByteString (ByteString)
-import Data.Text (Text)
-import Data.Time.Clock.POSIX (POSIXTime, getPOSIXTime)
+import           Data.ByteString           (ByteString)
+import           Data.Text                 (Text)
+import           Data.Time.Clock.POSIX     (POSIXTime, getPOSIXTime)
 
 -- import Network.HTTP.Types.URI (URI)
-import Network.HTTP.Types.Method (Method)
-import Network.HTTP.Types.Header (Header, hWWWAuthenticate)
-import Network.HTTP.Client (Request, defaultManagerSettings, managerModifyRequest, managerRetryableException)
+import           Network.HTTP.Client       (Request, defaultManagerSettings,
+                                            managerModifyRequest,
+                                            managerRetryableException)
+import           Network.HTTP.Types.Header (Header, hWWWAuthenticate)
+import           Network.HTTP.Types.Method (Method)
 
-import Control.Exception (SomeException)
-import Data.IORef (newIORef, readIORef, writeIORef)
+import           Control.Exception         (SomeException)
+import           Data.IORef                (newIORef, readIORef, writeIORef)
 
 -- import Network.Wai (Request, requestHeaderHost, requestHeaders, remoteHost, requestMethod, rawPathInfo, rawQueryString)
 
-import Network.Wreq.Session (Session)
-import qualified Network.Wreq.Session as S
+import           Network.Wreq.Session      (Session)
+import qualified Network.Wreq.Session      as S
 
-import Network.Oz.Types
-import qualified Network.Hawk.Client as Hawk
+import qualified Network.Hawk.Client       as Hawk
+import           Network.Oz.Types
 
 -- |A convenience utility to generate the application Hawk request
 -- authorization header for making authenticated Oz requests.

@@ -14,30 +14,30 @@ module Network.Oz.Application
   , defaultOzServerOpts
   ) where
 
-import Data.Text (Text)
-import qualified Data.Text.Lazy as TL
-import qualified Data.Text as T
-import Data.Text.Encoding (decodeUtf8)
-import Data.ByteString (ByteString)
-import Data.Proxy
-import Web.Scotty
-import Network.Wai
-import Network.HTTP.Types (status400, status401)
-import Control.Monad.IO.Class (liftIO, MonadIO(..))
-import Data.Monoid ((<>))
-import Control.Monad (void, liftM)
-import Data.Maybe (fromMaybe)
-import Data.Aeson.Types (ToJSON)
+import           Control.Monad             (liftM, void)
+import           Control.Monad.IO.Class    (MonadIO (..), liftIO)
+import           Data.Aeson.Types          (ToJSON)
+import           Data.ByteString           (ByteString)
+import           Data.Maybe                (fromMaybe)
+import           Data.Monoid               ((<>))
+import           Data.Proxy
+import           Data.Text                 (Text)
+import qualified Data.Text                 as T
+import           Data.Text.Encoding        (decodeUtf8)
+import qualified Data.Text.Lazy            as TL
+import           Network.HTTP.Types        (status400, status401)
+import           Network.Wai
+import           Web.Scotty
 
-import Network.Oz.Types
-import Network.Oz.Internal.Types
-import Network.Oz.JSON
-import Network.Oz.Ticket
-import Network.Hawk.Types
-import Network.Hawk.Server (AuthSuccess(..))
-import qualified Network.Hawk.Server as Hawk
-import Network.Oz.Server
-import qualified Network.Oz.Boom as Boom
+import           Network.Hawk.Server       (AuthSuccess (..))
+import qualified Network.Hawk.Server       as Hawk
+import           Network.Hawk.Types
+import qualified Network.Oz.Boom           as Boom
+import           Network.Oz.Internal.Types
+import           Network.Oz.JSON
+import           Network.Oz.Server
+import           Network.Oz.Ticket
+import           Network.Oz.Types
 
 data OzServerOpts = OzServerOpts
   { ozSecret     :: Key -- ^ The password for encrypting Oz tickets
@@ -98,12 +98,12 @@ ozApp OzServerOpts{..} = scottyApp $ do
       res <- Hawk.authenticateRequest ozHawk creds req payload
       case res of
         Right (AuthSuccess c a) -> return (c, a)
-        Left f -> hawkAuthFail f
+        Left f                  -> hawkAuthFail f
 
     -- respond to failed hawk authentication
     hawkAuthFail :: Hawk.AuthFail -> ActionM a
-    hawkAuthFail (Hawk.AuthFailBadRequest e _) = Boom.badRequest e
-    hawkAuthFail (Hawk.AuthFailUnauthorized e _ _) = Boom.unauthorized e
+    hawkAuthFail (Hawk.AuthFailBadRequest e _)       = Boom.badRequest e
+    hawkAuthFail (Hawk.AuthFailUnauthorized e _ _)   = Boom.unauthorized e
     -- fixme: need to send back server's time so client can apply offset
     hawkAuthFail (Hawk.AuthFailStaleTimeStamp e c a) = Boom.unauthorized e
 
@@ -111,9 +111,9 @@ ozApp OzServerOpts{..} = scottyApp $ do
       appCfg <- liftIO $ loadApp appId
       case appCfg of
         Right app -> return app
-        Left e -> Boom.unauthorized e
+        Left e    -> Boom.unauthorized e
 
-    loadApp Nothing = return $ Left "Invalid application object"
+    loadApp Nothing      = return $ Left "Invalid application object"
     loadApp (Just appId) = ozLoadApp appId
 
     ejson :: (Show a, ToJSON a) => Either String a -> ActionM ()

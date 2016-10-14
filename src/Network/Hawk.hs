@@ -48,6 +48,6 @@ module Network.Hawk
        ( module Network.Hawk.Types
        ) where
 
-import Network.Hawk.Client
-import Network.Hawk.Server
-import Network.Hawk.Types
+import           Network.Hawk.Client
+import           Network.Hawk.Server
+import           Network.Hawk.Types

@@ -1,21 +1,21 @@
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TupleSections   #-}
 module Network.Oz.JSON where
 
-import Data.Aeson
-import Data.Aeson.Types
-import qualified Data.Aeson.Types as JSON
-import Data.Text (Text)
-import qualified Data.Text as T (pack, unpack, null)
-import Data.Text.Encoding (decodeUtf8, encodeUtf8)
-import Data.Char (toLower)
-import Data.Time.Clock.POSIX (POSIXTime)
-import Data.Scientific (toRealFloat)
-import Data.Maybe (catMaybes)
+import           Data.Aeson
+import           Data.Aeson.Types
+import qualified Data.Aeson.Types          as JSON
+import           Data.Char                 (toLower)
+import           Data.Maybe                (catMaybes)
+import           Data.Scientific           (toRealFloat)
+import           Data.Text                 (Text)
+import qualified Data.Text                 as T (null, pack, unpack)
+import           Data.Text.Encoding        (decodeUtf8, encodeUtf8)
+import           Data.Time.Clock.POSIX     (POSIXTime)
 
-import Network.Oz.Types
-import Network.Oz.Internal.Types
-import Network.Hawk.Types
+import           Network.Hawk.Types
+import           Network.Oz.Internal.Types
+import           Network.Oz.Types
 
 fieldModifier :: String -> String
 fieldModifier = drop 1 . dropWhile (/= '_') . dropWhile (== '_') . camelTo2 '_'
@@ -77,7 +77,7 @@ instance ToJSON HawkAlgo where
 
 instance FromJSON HawkAlgo where
   parseJSON (String s) = case readHawkAlgo (T.unpack s) of
-                           Just a -> return a
+                           Just a  -> return a
                            Nothing -> fail "Unknown algorithm"
 
 instance ToJSON OzExt where
@@ -88,7 +88,7 @@ instance FromJSON OzExt where
 
 instance FromJSON Key where
   parseJSON (String v) = return $ Key (encodeUtf8 v)
-  parseJSON invalid = typeMismatch "Key" invalid
+  parseJSON invalid    = typeMismatch "Key" invalid
 
 instance FromJSON ReissueRequest where
   parseJSON (Object v) = ReissueRequest <$>

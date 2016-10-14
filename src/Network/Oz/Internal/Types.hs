@@ -3,10 +3,10 @@ module Network.Oz.Internal.Types
   , RsvpRequest(..)
   ) where
 
-import Data.Text (Text)
+import           Data.Text        (Text)
 
 -- fixme: needs to be the other way around
-import Network.Oz.Types (OzAppId, OzScope)
+import           Network.Oz.Types (OzAppId, OzScope)
 
 -- | Payload for oz app reissue endpoint.
 -- - A different application identifier than the one

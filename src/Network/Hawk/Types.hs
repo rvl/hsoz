@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Network.Hawk.Types
@@ -11,15 +11,15 @@ module Network.Hawk.Types
        , module Network.Hawk.Algo
        ) where
 
-import Data.Text (Text)
-import Data.ByteString (ByteString)
-import qualified Data.ByteString.Lazy as BL
-import GHC.Generics
-import Network.HTTP.Types.Method (Method)
-import Data.Time.Clock.POSIX (POSIXTime)
-import Control.Applicative
+import           Control.Applicative
+import           Data.ByteString           (ByteString)
+import qualified Data.ByteString.Lazy      as BL
+import           Data.Text                 (Text)
+import           Data.Time.Clock.POSIX     (POSIXTime)
+import           GHC.Generics
+import           Network.HTTP.Types.Method (Method)
 
-import Network.Hawk.Algo
+import           Network.Hawk.Algo
 
 -- | Identifies a particular client so that their credentials can be
 -- looked up.
@@ -64,5 +64,5 @@ type ContentType = ByteString -- fixme: CI ByteString
 -- | Payload data and content type bundled up for convenience.
 data PayloadInfo = PayloadInfo
                    { payloadContentType :: ContentType
-                   , payloadData :: BL.ByteString
+                   , payloadData        :: BL.ByteString
                    } deriving Show

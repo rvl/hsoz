@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | Functions for implementing an Oz server.
@@ -8,19 +8,21 @@ module Network.Oz.Server
   --, authenticate
   ) where
 
-import Data.Text (Text)
-import Data.Text.Encoding (encodeUtf8)
-import Data.ByteString (ByteString)
-import Control.Monad.IO.Class (MonadIO(..))
-import Data.Time.Clock.POSIX (getPOSIXTime)
-import Network.Wai
-import Data.Maybe (fromMaybe)
+import           Control.Monad.IO.Class (MonadIO (..))
+import           Data.ByteString        (ByteString)
+import           Data.Maybe             (fromMaybe)
+import           Data.Text              (Text)
+import           Data.Text.Encoding     (encodeUtf8)
+import           Data.Time.Clock.POSIX  (getPOSIXTime)
+import           Network.Wai
 
-import Network.Oz.Types
-import qualified Network.Hawk.Server as Hawk
-import Network.Hawk.Server (AuthResult, AuthSuccess(..), AuthFail(..), scApp, shaApp, scDlg, shaDlg)
-import Network.Hawk.Types
-import Network.Oz.Ticket
+import           Network.Hawk.Server    (AuthFail (..), AuthResult,
+                                         AuthSuccess (..), scApp, scDlg, shaApp,
+                                         shaDlg)
+import qualified Network.Hawk.Server    as Hawk
+import           Network.Hawk.Types
+import           Network.Oz.Ticket
+import           Network.Oz.Types
 
 -- | Authenticates a 'Network.Wai.Request' using Hawk
 -- 'Network.Hawk.Server.authenticateRequest'. The Oz ticket is

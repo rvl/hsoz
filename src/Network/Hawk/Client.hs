@@ -1,6 +1,6 @@
+{-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE RecordWildCards           #-}
 
 -- | Functions for making Hawk-authenticated request headers and
 -- verifying responses from the server.
@@ -17,42 +17,44 @@ module Network.Hawk.Client
        , module Network.Hawk.Types
        ) where
 
-import GHC.Generics
-import Data.Text (Text)
-import qualified Data.Text as T
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString.Char8 as S8
-import qualified Data.Map as M
-import Data.Time.Clock.POSIX
-import Data.Time.Clock (NominalDiffTime)
-import qualified Data.ByteString.Base64 as B64
-import Crypto.Random
-import qualified Data.ByteArray as BA (unpack)
-import Crypto.Hash
-import Network.Wreq hiding (header)
-import Network.HTTP.Types.Method (Method)
-import Network.HTTP.Types.Header (hContentType, hWWWAuthenticate)
-import Network.HTTP.Types.URI (extractPath)
-import Data.CaseInsensitive (CI(..))
-import Network.Socket (SockAddr(..), PortNumber)
-import URI.ByteString (parseURI, laxURIParserOptions, uriAuthority, authorityHost, hostBS, authorityPort, portNumber)
-import Data.Text.Encoding (encodeUtf8)
-import Control.Monad (join)
-import Data.Maybe (catMaybes)
-import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Lens ((^.), (^?))
+import           Control.Lens              ((^.), (^?))
+import           Control.Monad             (join)
+import           Control.Monad.IO.Class    (MonadIO, liftIO)
+import           Crypto.Hash
+import           Crypto.Random
+import qualified Data.ByteArray            as BA (unpack)
+import           Data.ByteString           (ByteString)
+import qualified Data.ByteString           as BS
+import qualified Data.ByteString.Base64    as B64
+import qualified Data.ByteString.Char8     as S8
+import qualified Data.ByteString.Lazy      as BL
+import           Data.CaseInsensitive      (CI (..))
+import qualified Data.Map                  as M
+import           Data.Maybe                (catMaybes)
+import           Data.Text                 (Text)
+import qualified Data.Text                 as T
+import           Data.Text.Encoding        (encodeUtf8)
+import           Data.Time.Clock           (NominalDiffTime)
+import           Data.Time.Clock.POSIX
+import           GHC.Generics
+import           Network.HTTP.Types.Header (hContentType, hWWWAuthenticate)
+import           Network.HTTP.Types.Method (Method)
+import           Network.HTTP.Types.URI    (extractPath)
+import           Network.Socket            (PortNumber, SockAddr (..))
+import           Network.Wreq              hiding (header)
+import           URI.ByteString            (authorityHost, authorityPort,
+                                            hostBS, laxURIParserOptions,
+                                            parseURI, portNumber, uriAuthority)
 
-import Network.Iron.Util
-import Network.Hawk.Common
-import Network.Hawk.Util
-import Network.Hawk.Types
+import           Network.Hawk.Common
+import           Network.Hawk.Types
+import           Network.Hawk.Util
+import           Network.Iron.Util
 
 -- | ID and key used for encrypting Hawk @Authorization@ header.
 data Credentials = Credentials
-  { ccId :: ClientId
-  , ccKey :: Key
+  { ccId        :: ClientId
+  , ccKey       :: Key
   , ccAlgorithm :: HawkAlgo
   } deriving (Show, Generic)
 
@@ -61,20 +63,20 @@ data Credentials = Credentials
 -- original Javascript implementation of Hawk.
 data ClientHeaderArtifacts = ClientHeaderArtifacts
   { chaTimestamp :: POSIXTime
-  , chaNonce :: ByteString
-  , chaMethod :: Method
-  , chaHost :: ByteString
-  , chaPort :: Maybe Int
-  , chaResource :: ByteString
-  , chaHash :: Maybe ByteString
-  , chaExt :: Maybe ByteString -- fixme: this should be json value
-  , chaApp :: Maybe Text -- ^ app id, for oz
-  , chaDlg :: Maybe Text -- ^ delegated-by app id, for oz
+  , chaNonce     :: ByteString
+  , chaMethod    :: Method
+  , chaHost      :: ByteString
+  , chaPort      :: Maybe Int
+  , chaResource  :: ByteString
+  , chaHash      :: Maybe ByteString
+  , chaExt       :: Maybe ByteString -- fixme: this should be json value
+  , chaApp       :: Maybe Text -- ^ app id, for oz
+  , chaDlg       :: Maybe Text -- ^ delegated-by app id, for oz
   } deriving Show
 
 -- | The result of Hawk header generation.
 data Header = Header
-  { hdrField :: Authorization  -- ^ Value of @Authorization@ header.
+  { hdrField     :: Authorization  -- ^ Value of @Authorization@ header.
   , hdrArtifacts :: ClientHeaderArtifacts  -- ^ Not sure if this is needed by users.
   } deriving (Show, Generic)
 
@@ -131,7 +133,7 @@ clientMac Credentials{..} ClientHeaderArtifacts{..} =
 hawkHeaderItems :: [(ByteString, Maybe ByteString)] -> [(ByteString, ByteString)]
 hawkHeaderItems = catMaybes . map pull
   where
-    pull (k, Just v) = Just (k, v)
+    pull (k, Just v)  = Just (k, v)
     pull (k, Nothing) = Nothing
 
 data SplitURL = SplitURL

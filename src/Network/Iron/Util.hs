@@ -4,12 +4,12 @@ module Network.Iron.Util
   , fixedTimeEq
   ) where
 
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS (pack, unpack)
-import qualified Data.ByteString.Char8 as S8
-import qualified Data.ByteArray.Encoding as B (convertToBase, Base(..))
-import Data.ByteArray (ByteArrayAccess)
-import Crypto.Hash
+import           Crypto.Hash
+import           Data.ByteArray          (ByteArrayAccess)
+import qualified Data.ByteArray.Encoding as B (Base (..), convertToBase)
+import           Data.ByteString         (ByteString)
+import qualified Data.ByteString         as BS (pack, unpack)
+import qualified Data.ByteString.Char8   as S8
 
 -- | Shorthand for encode in Base64.
 b64 :: ByteArrayAccess a => a -> ByteString

@@ -20,28 +20,32 @@ module Network.Hawk.Server
        , module Network.Hawk.Types
        ) where
 
-import Data.Text (Text)
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString.Char8 as S8
-import Data.Text.Encoding (decodeUtf8)
-import Data.CaseInsensitive (CI(..))
-import Data.Time.Clock.POSIX
-import Data.Time.Clock (NominalDiffTime)
-import Control.Monad.IO.Class (MonadIO, liftIO)
-import Network.Wai (Request, requestHeaderHost, requestHeaders, remoteHost, requestMethod, rawPathInfo, rawQueryString)
-import Network.HTTP.Types.Method (Method, methodGet, methodPost)
-import Network.HTTP.Types.Header (hAuthorization, hContentType, Header)
-import Data.Monoid ((<>))
-import Data.Maybe (catMaybes, fromMaybe)
-import Control.Applicative ((<|>))
-import Control.Monad (join)
+import           Control.Applicative       ((<|>))
+import           Control.Monad             (join)
+import           Control.Monad.IO.Class    (MonadIO, liftIO)
+import           Data.ByteString           (ByteString)
+import qualified Data.ByteString           as BS
+import qualified Data.ByteString.Char8     as S8
+import qualified Data.ByteString.Lazy      as BL
+import           Data.CaseInsensitive      (CI (..))
+import           Data.Maybe                (catMaybes, fromMaybe)
+import           Data.Monoid               ((<>))
+import           Data.Text                 (Text)
+import           Data.Text.Encoding        (decodeUtf8)
+import           Data.Time.Clock           (NominalDiffTime)
+import           Data.Time.Clock.POSIX
+import           Network.HTTP.Types.Header (Header, hAuthorization,
+                                            hContentType)
+import           Network.HTTP.Types.Method (Method, methodGet, methodPost)
+import           Network.Wai               (Request, rawPathInfo,
+                                            rawQueryString, remoteHost,
+                                            requestHeaderHost, requestHeaders,
+                                            requestMethod)
 
-import Network.Iron.Util (fixedTimeEq)
-import Network.Hawk.Common
-import Network.Hawk.Types
-import Network.Hawk.Util
+import           Network.Hawk.Common
+import           Network.Hawk.Types
+import           Network.Hawk.Util
+import           Network.Iron.Util         (fixedTimeEq)
 
 -- | Bundle of parameters for 'authenticateRequest'. Provides
 -- information about what the public URL of the server would be. If
@@ -50,15 +54,15 @@ import Network.Hawk.Util
 -- might need to be overridden.
 data AuthReqOpts = AuthReqOpts
   { saHostHeaderName :: Maybe (CI ByteString) -- ^ Alternate name for @Host@ header
-  , saHost :: Maybe ByteString -- ^ Overrides the URL host
-  , saPort :: Maybe ByteString -- ^ Overrides the URL port
-  , saOpts :: AuthOpts  -- ^ Parameters for 'authenticate'
+  , saHost           :: Maybe ByteString -- ^ Overrides the URL host
+  , saPort           :: Maybe ByteString -- ^ Overrides the URL port
+  , saOpts           :: AuthOpts  -- ^ Parameters for 'authenticate'
   }
 
 -- | Bundle of parameters for 'authenticate'.
 data AuthOpts = AuthOpts
-  { saCheckNonce :: NonceFunc
-  , saTimestampSkew :: NominalDiffTime
+  { saCheckNonce          :: NonceFunc
+  , saTimestampSkew       :: NominalDiffTime
   , saIronLocaltimeOffset :: NominalDiffTime -- fixme: check this is still needed
   }
 
@@ -106,9 +110,9 @@ hawkReq AuthReqOpts{..} req body = HawkReq { hrqMethod = requestMethod req
   where
     hostHdr = maybe (requestHeaderHost req) (flip lookup (requestHeaders req)) saHostHeaderName
     (host, port) = case parseHostnamePort <$> hostHdr of
-      Nothing -> (Nothing, Nothing)
-      (Just ("", p)) -> (Nothing, p)
-      (Just (h, Just p)) -> (Just h, Just p)
+      Nothing             -> (Nothing, Nothing)
+      (Just ("", p))      -> (Nothing, p)
+      (Just (h, Just p))  -> (Just h, Just p)
       (Just (h, Nothing)) -> (Just h, Nothing)
     ct = fromMaybe "" $ lookup hContentType $ requestHeaders req
 
@@ -149,7 +153,7 @@ serverAuthenticate' now opts creds hrq@HawkReq{..} sah@AuthorizationHeader{..} =
 -- | Maps auth status into the more detailed success/failure type
 authResult :: ServerCredentials -> ServerAuthArtifacts -> Either String a -> Either AuthFail AuthSuccess
 authResult c a (Right _) = Right (AuthSuccess c a)
-authResult c a (Left e) = Left (AuthFailUnauthorized e (Just c) (Just a))
+authResult c a (Left e)  = Left (AuthFailUnauthorized e (Just c) (Just a))
 
 serverAuthArtifacts :: HawkReq -> AuthorizationHeader -> ServerAuthArtifacts
 serverAuthArtifacts HawkReq{..} AuthorizationHeader{..} =

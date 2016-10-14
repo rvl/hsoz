@@ -1,22 +1,22 @@
 module OzServer where
 
-import Network.Wai
-import Network.Wai.Handler.Warp
-import Network.HTTP.Types (hAuthorization)
-import Data.Text (Text)
-import Data.Monoid ((<>))
-import Data.CaseInsensitive (original)
-import qualified Data.ByteString.Char8 as S8
-import qualified Data.ByteString.Lazy as BL
-import Network.Oz.Application
-import Network.Oz.Types
-import Common
-import Data.List (find)
+import           Common
+import qualified Data.ByteString.Char8    as S8
+import qualified Data.ByteString.Lazy     as BL
+import           Data.CaseInsensitive     (original)
+import           Data.List                (find)
+import           Data.Monoid              ((<>))
+import           Data.Text                (Text)
+import           Network.HTTP.Types       (hAuthorization)
+import           Network.Oz.Application
+import           Network.Oz.Types
+import           Network.Wai
+import           Network.Wai.Handler.Warp
 
 -- fixme: temp
-import qualified Network.Hawk.Client as Hawk
-import Data.Aeson (Value(..), object, (.=), encode)
-import qualified Data.Text as T
+import           Data.Aeson               (Value (..), encode, object, (.=))
+import qualified Data.Text                as T
+import qualified Network.Hawk.Client      as Hawk
 
 serverMain :: IO ()
 serverMain = do

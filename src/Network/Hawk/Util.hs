@@ -8,20 +8,20 @@ module Network.Hawk.Util
        , readTs
        ) where
 
-import Data.Attoparsec.ByteString.Char8
-import Data.ByteString (ByteString)
-import qualified Data.ByteString.Char8 as S8
-import Data.Text.Encoding (decodeUtf8)
-import Data.Text (Text)
-import qualified Data.Map as M
-import Control.Applicative ((<|>))
-import Data.Time.Clock.POSIX
-import           Data.CaseInsensitive  ( CI )
-import qualified Data.CaseInsensitive as CI
-import Data.Monoid ((<>))
+import           Control.Applicative              ((<|>))
+import           Data.Attoparsec.ByteString.Char8
+import           Data.ByteString                  (ByteString)
+import qualified Data.ByteString.Char8            as S8
+import           Data.CaseInsensitive             (CI)
+import qualified Data.CaseInsensitive             as CI
+import qualified Data.Map                         as M
+import           Data.Monoid                      ((<>))
+import           Data.Text                        (Text)
+import           Data.Text.Encoding               (decodeUtf8)
+import           Data.Time.Clock.POSIX
 
-import Network.Hawk.Common
-import Network.Hawk.Types
+import           Network.Hawk.Common
+import           Network.Hawk.Types
 
 parseHeader :: [ByteString] -> (AuthAttrs -> Either String hdr) -> ByteString -> Either String (AuthScheme, hdr)
 parseHeader keys hdr = parseOnly (hawkAuthParser keys hdr)
@@ -36,14 +36,14 @@ hawkAuthParser keys parseHdrs = do
   endOfInput
   case parseHdrs m of
     Right h -> return (s, h)
-    Left a -> fail a
+    Left a  -> fail a
 
 authAttrMaybe :: AuthAttrs -> ByteString -> Maybe ByteString
 authAttrMaybe m a = M.lookup a m
 
 authAttr :: AuthAttrs -> ByteString -> Either String ByteString
 authAttr m a = case authAttrMaybe m a of
-  Just v -> Right v
+  Just v  -> Right v
   Nothing -> Left $ S8.unpack ("Missing \"" <> a <> "\" attribute")
 
 authParser :: [ByteString] -> Parser AuthAttrs
@@ -70,12 +70,12 @@ readTs = toEither "Invalid timestamp" . readTs'
   where
     readTs' = fmap (fromInteger . toInteger . fst) . S8.readInt
     toEither _ (Just a) = Right a
-    toEither e Nothing = Left e
+    toEither e Nothing  = Left e
 
 parseHostnamePort :: ByteString -> (ByteString, Maybe Int)
 parseHostnamePort hp = case parseOnly hostnamePort hp of
   Right r -> r
-  Left _ -> ("", Nothing)
+  Left _  -> ("", Nothing)
 
 -- fixme: not sure whether to allow junk text after port
 

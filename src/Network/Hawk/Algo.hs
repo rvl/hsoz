@@ -1,6 +1,6 @@
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE ExistentialQuantification #-}
 
 module Network.Hawk.Algo
   ( HawkAlgo(..)
@@ -11,16 +11,16 @@ module Network.Hawk.Algo
   , readHawkAlgo
   ) where
 
-import Data.ByteString (ByteString)
-import qualified Data.ByteArray.Encoding as B (convertToBase, Base(..))
-import Crypto.Hash.Algorithms (SHA1(..), SHA256(..))
-import Crypto.Hash (Digest(..), hash)
-import Crypto.MAC.HMAC (hmac, HMAC, hmacGetDigest)
-import Data.Char (toLower)
-import Data.ByteArray (ByteArrayAccess)
-import Data.String (IsString)
-import GHC.Generics
-import Network.Iron.Util (b64)
+import           Crypto.Hash             (Digest (..), hash)
+import           Crypto.Hash.Algorithms  (SHA1 (..), SHA256 (..))
+import           Crypto.MAC.HMAC         (HMAC, hmac, hmacGetDigest)
+import           Data.ByteArray          (ByteArrayAccess)
+import qualified Data.ByteArray.Encoding as B (Base (..), convertToBase)
+import           Data.ByteString         (ByteString)
+import           Data.Char               (toLower)
+import           Data.String             (IsString)
+import           GHC.Generics
+import           Network.Iron.Util       (b64)
 
 -- fixme: decide whether this should be text or bytestring or
 -- SecureMem, and whether it should be put into Iron.
@@ -61,6 +61,6 @@ instance HawkAlgoCls SHA256 where
 -- structures.
 readHawkAlgo :: String -> Maybe HawkAlgo
 readHawkAlgo a = case map toLower a of
-                   "sha1" -> Just (HawkAlgo SHA1)
+                   "sha1"   -> Just (HawkAlgo SHA1)
                    "sha256" -> Just (HawkAlgo SHA256)
-                   _ -> Nothing
+                   _        -> Nothing

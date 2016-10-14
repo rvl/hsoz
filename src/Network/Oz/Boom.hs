@@ -8,16 +8,17 @@ module Network.Oz.Boom
   , errHandler
   ) where
 
-import Data.Text.Lazy (Text, pack, toStrict)
-import qualified Data.Text.Lazy as TL
-import Data.Text.Encoding (decodeUtf8)
-import Web.Scotty.Trans
-import Data.Aeson (object, Value(..), (.=))
-import Network.HTTP.Types.Status (Status(..), status400, status401, status403, status500, mkStatus)
-import Control.Monad.IO.Class (liftIO, MonadIO(..))
-import Data.Monoid ((<>))
-import Text.Read (readMaybe)
-import Data.Maybe (fromMaybe)
+import           Control.Monad.IO.Class    (MonadIO (..), liftIO)
+import           Data.Aeson                (Value (..), object, (.=))
+import           Data.Maybe                (fromMaybe)
+import           Data.Monoid               ((<>))
+import           Data.Text.Encoding        (decodeUtf8)
+import           Data.Text.Lazy            (Text, pack, toStrict)
+import qualified Data.Text.Lazy            as TL
+import           Network.HTTP.Types.Status (Status (..), mkStatus, status400,
+                                            status401, status403, status500)
+import           Text.Read                 (readMaybe)
+import           Web.Scotty.Trans
 
 -- fixme: can't figure out scotty custom error types, so am doing lame
 -- conversion of status codes to strings.
