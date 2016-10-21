@@ -9,10 +9,6 @@ module Network.Hawk.Common
        , checkPayloadHashMaybe
        , hServerAuthorization
        , HawkType(..)
-       , AuthResult
-       , AuthResult'(..)
-       , AuthSuccess(..)
-       , AuthFail(..)
        , Authorization
        ) where
 
@@ -36,24 +32,6 @@ import           Network.Iron.Util         (fixedTimeEq)
 
 data HawkType = HawkHeader | HawkBewit | HawkResponse
               deriving (Show, Eq)
-
--- | The end result of authentication.
-type AuthResult = AuthResult' AuthSuccess
--- | An intermediate result of authentication.
-type AuthResult' a = Either AuthFail a
-
--- | Authentication can fail in multiple ways. This type includes the
--- information necessary to generate a suitable response for the
--- client. In the case of a stale timestamp, the client may try
--- another authenticated request.
-data AuthFail = AuthFailBadRequest String (Maybe ServerAuthArtifacts)
-              | AuthFailUnauthorized String (Maybe ServerCredentials) (Maybe ServerAuthArtifacts)
-              | AuthFailStaleTimeStamp String ServerCredentials ServerAuthArtifacts
-              deriving Show
-
--- | The result of a successful authentication is a set of credentials
--- and "artifacts".
-data AuthSuccess = AuthSuccess ServerCredentials ServerAuthArtifacts deriving Show
 
 -- | The value of an @Authorization@ header.
 type Authorization = ByteString

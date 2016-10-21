@@ -20,7 +20,7 @@ import qualified Network.Hawk.Client      as Hawk
 
 serverMain :: IO ()
 serverMain = do
-  let opts = defaultOzServerOpts { ozSecret = sharedKey, ozLoadApp = loadApp }
+  let opts = (defaultOzServerOpts sharedKey) { ozLoadApp = loadApp }
   app <- ozApp opts
 
   putStrLn "Try this:"

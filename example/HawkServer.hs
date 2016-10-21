@@ -16,14 +16,14 @@ import           Network.Wai
 import           Network.Wai.Handler.Warp
 
 import           Common
-import           Network.Hawk
+import           Network.Hawk.Server.Types
 import qualified Network.Hawk.Server       as Hawk
 
 serverMain :: IO ()
 serverMain = run 8000 app
 
-auth :: ClientId -> IO (Either String ServerCredentials)
-auth id = return $ Right $ ServerCredentials sharedKey (HawkAlgo SHA256) "Steve" Nothing Nothing
+auth :: ClientId -> IO (Either String (ServerCredentials, Text))
+auth id = return $ Right (ServerCredentials sharedKey (HawkAlgo SHA256), "Steve")
 
 app :: Application
 app req respond = do
@@ -31,9 +31,9 @@ app req respond = do
   payload <- lazyRequestBody req
   res <- Hawk.authenticateRequest opts auth req (Just payload)
   respond $ case res of
-    Right (Hawk.AuthSuccess creds artifacts) -> do
+    Right (Hawk.AuthSuccess creds user artifacts) -> do
       let ext = decodeUtf8 <$> shaExt artifacts
-      let payload = textPayload $ "Hello " <> scUser creds <> maybe "" (" " <>) ext
+      let payload = textPayload $ "Hello " <> user <> maybe "" (" " <>) ext
       let autho = Hawk.header creds artifacts (Just payload)
       responseLBS status200 [payloadCt payload, autho] (payloadData payload)
     Left (Hawk.AuthFailBadRequest e _) -> responseLBS badRequest400 [] (lazyString e)

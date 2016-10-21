@@ -1,5 +1,9 @@
 {-# LANGUAGE RecordWildCards #-}
 
+-- | Functions for making Oz-authenticated requests.
+--
+-- This module is under construction.
+
 module Network.Oz.Client
   ( header
   , withSession

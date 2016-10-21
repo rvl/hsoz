@@ -12,12 +12,7 @@ module Network.Hawk.Server
        , defaultAuthOpts
        , AuthReqOpts(..)
        , AuthOpts(..)
-       , AuthResult
-       , AuthResult'(..)
-       , AuthFail(..)
-       , AuthSuccess(..)
-       , CredentialsFunc
-       , module Network.Hawk.Types
+       , module Network.Hawk.Server.Types
        ) where
 
 import           Control.Applicative       ((<|>))
@@ -43,7 +38,7 @@ import           Network.Wai               (Request, rawPathInfo,
                                             requestMethod)
 
 import           Network.Hawk.Common
-import           Network.Hawk.Types
+import           Network.Hawk.Server.Types
 import           Network.Hawk.Util
 import           Network.Iron.Util         (fixedTimeEq)
 
@@ -73,20 +68,16 @@ defaultAuthReqOpts = AuthReqOpts Nothing Nothing Nothing defaultAuthOpts
 
 defaultAuthOpts = AuthOpts (\x t n -> True) 60 0
 
--- | A user-supplied callback to get credentials from a client
--- identifier.
-type CredentialsFunc m = ClientId -> m (Either String ServerCredentials)
-
 -- | Checks the @Authorization@ header of a 'Network.Wai.Request' and
 -- (optionally) a payload. The header will be parsed and verified with
 -- the credentials supplied.
-authenticateRequest :: MonadIO m => AuthReqOpts -> CredentialsFunc m
-                             -> Request -> Maybe BL.ByteString -> m AuthResult
-authenticateRequest opts cred req body = do
+authenticateRequest :: MonadIO m => AuthReqOpts -> CredentialsFunc m t
+                             -> Request -> Maybe BL.ByteString -> m (AuthResult t)
+authenticateRequest opts creds req body = do
   let hreq = hawkReq opts req body
   if BS.null (hrqAuthorization hreq)
     then return $ Left (AuthFailBadRequest "Missing Authorization header" Nothing)
-    else authenticate (saOpts opts) cred hreq
+    else authenticate (saOpts opts) creds hreq
 
 -- | A package of values containing the attributes of a HTTP request
 -- which are relevant to Hawk authentication.
@@ -120,7 +111,7 @@ hawkReq AuthReqOpts{..} req body = HawkReq { hrqMethod = requestMethod req
 -- | Checks the @Authorization@ header of a generic request. The
 -- header will be parsed and verified with the credentials
 -- supplied. If a payload is provided, it will be verified.
-authenticate :: MonadIO m => AuthOpts -> CredentialsFunc m -> HawkReq -> m AuthResult
+authenticate :: MonadIO m => AuthOpts -> CredentialsFunc m t -> HawkReq -> m (AuthResult t)
 -- fixme: payload hash is included in result. Need a function which
 -- can be used to verify payload later if it's not immediately
 -- available.
@@ -134,14 +125,14 @@ authenticate opts getCreds req@HawkReq{..} = do
         Left e -> Left (AuthFailUnauthorized e Nothing (Just (serverAuthArtifacts req sah)))
     Left err -> return $ Left err
 
-serverAuthenticate' :: POSIXTime -> AuthOpts -> ServerCredentials
-                    -> HawkReq -> AuthorizationHeader -> AuthResult
-serverAuthenticate' now opts creds hrq@HawkReq{..} sah@AuthorizationHeader{..} = do
+serverAuthenticate' :: POSIXTime -> AuthOpts -> (ServerCredentials, t)
+                    -> HawkReq -> AuthorizationHeader -> AuthResult t
+serverAuthenticate' now opts (creds, t) hrq@HawkReq{..} sah@AuthorizationHeader{..} = do
   -- fixme: check !credentials => empty credentials
   -- fixme: check !credentials.key || !credentials.algorithm => invalid credentials
   -- fixme: check credentials.algorithm? => unknown algorithm
   let arts = serverAuthArtifacts hrq sah
-  let doCheck = authResult creds arts
+  let doCheck = authResult creds t arts
   let mac = serverMac creds arts HawkHeader
   if mac `fixedTimeEq` sahMac then do
     doCheck $ checkPayloadHash (scAlgorithm creds) sahHash hrqPayload
@@ -151,9 +142,10 @@ serverAuthenticate' now opts creds hrq@HawkReq{..} sah@AuthorizationHeader{..} =
     else Left (AuthFailUnauthorized "Bad mac" (Just creds) (Just arts))
 
 -- | Maps auth status into the more detailed success/failure type
-authResult :: ServerCredentials -> ServerAuthArtifacts -> Either String a -> Either AuthFail AuthSuccess
-authResult c a (Right _) = Right (AuthSuccess c a)
-authResult c a (Left e)  = Left (AuthFailUnauthorized e (Just c) (Just a))
+authResult :: ServerCredentials -> t -> ServerAuthArtifacts
+           -> Either String a -> Either AuthFail (AuthSuccess t)
+authResult c t a (Right _) = Right (AuthSuccess c t a)
+authResult c _ a (Left e)  = Left (AuthFailUnauthorized e (Just c) (Just a))
 
 serverAuthArtifacts :: HawkReq -> AuthorizationHeader -> ServerAuthArtifacts
 serverAuthArtifacts HawkReq{..} AuthorizationHeader{..} =

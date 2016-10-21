@@ -14,29 +14,31 @@ module Network.Oz.Application
   , defaultOzServerOpts
   ) where
 
-import           Control.Monad             (liftM, void)
+import           Control.Monad             (liftM, void, when)
 import           Control.Monad.IO.Class    (MonadIO (..), liftIO)
+import           Control.Applicative       ((<|>))
 import           Data.Aeson.Types          (ToJSON)
 import           Data.ByteString           (ByteString)
-import           Data.Maybe                (fromMaybe)
+import           Data.Maybe                (fromMaybe, isJust)
 import           Data.Monoid               ((<>))
 import           Data.Proxy
 import           Data.Text                 (Text)
 import qualified Data.Text                 as T
-import           Data.Text.Encoding        (decodeUtf8)
+import           Data.Text.Encoding        (decodeUtf8, encodeUtf8)
 import qualified Data.Text.Lazy            as TL
 import           Network.HTTP.Types        (status400, status401)
 import           Network.Wai
 import           Web.Scotty
+import           Data.Time.Clock.POSIX     (getPOSIXTime)
 
 import           Network.Hawk.Server       (AuthSuccess (..))
 import qualified Network.Hawk.Server       as Hawk
-import           Network.Hawk.Types
+import           Network.Hawk.Server.Types
 import qualified Network.Oz.Boom           as Boom
 import           Network.Oz.Internal.Types
 import           Network.Oz.JSON
 import           Network.Oz.Server
-import           Network.Oz.Ticket
+import qualified Network.Oz.Ticket         as Ticket
 import           Network.Oz.Types
 
 data OzServerOpts = OzServerOpts
@@ -50,8 +52,8 @@ data OzServerOpts = OzServerOpts
 
 -- | An empty Oz endpoint configuration. The password should be set to
 -- something secret.
-defaultOzServerOpts :: OzServerOpts
-defaultOzServerOpts = OzServerOpts "secret" defaultLoadApp defaultLoadGrant
+defaultOzServerOpts :: Key -> OzServerOpts
+defaultOzServerOpts p = OzServerOpts p defaultLoadApp defaultLoadGrant
   defaultTicketOpts Hawk.defaultAuthReqOpts defaultEndpoints
 
 defaultLoadApp :: OzLoadApp
@@ -63,7 +65,6 @@ defaultLoadGrant _ = return $ Left "ozLoadGrant not set"
 -- | Starts the 'Network.Wai.Application'.
 ozApp :: OzServerOpts -> IO Application
 ozApp OzServerOpts{..} = scottyApp $ do
-  -- middleware $ hawkAuthMiddleware opts
   defaultHandler Boom.errHandler
   let post' r = post . literal . T.unpack . r $ ozEndpoints
   post' endpointApp     $ app >>= ejson
@@ -74,19 +75,81 @@ ozApp OzServerOpts{..} = scottyApp $ do
     app = do
       (creds, arts) <- hawkAuthAction
       appCfg <- loadAppAction (shaApp arts)
-      res <- liftIO $ issueTicket appCfg creds Nothing ozSecret ozTicketOpts
-      return $ maybe (Left "Could not issue ticket") Right res
+      Ticket.issue ozSecret appCfg Nothing ozTicketOpts
 
-    reissue :: ReissueRequest -> ActionM OzTicket
+    -- fixme: flatten staircases
+    reissue :: ReissueRequest -> ActionM OzSealedTicket
     reissue (ReissueRequest mid mscope) = do
-      (creds, arts) <- hawkAuthAction
-      appCfg <- loadAppAction (shaApp arts)
-      return undefined
+      res <- request >>= authenticateExpired ozSecret ozTicketOpts ozHawk
+      case res of
+        Right (AuthSuccess c t a) -> do
+          let appId = ozTicketApp (ozTicket t)
+          appCfg <- liftIO $ ozLoadApp appId
+          case appCfg of
+            Right app -> do
+              when (isJust mid && not (ozAppDelegate app)) $
+                Boom.forbidden "Application has no delegation rights"
+              case ozTicketGrant (ozTicket t) of
+                Nothing -> reissueAction c app Nothing Nothing mid mscope t
+                Just gid -> do
+                  mgrant <- liftIO $ ozLoadGrant gid
+                  case mgrant of
+                    Right (grant, mext) -> do
+                      now <- liftIO $ getPOSIXTime
+                      when (((ozGrantApp grant /= ozTicketApp (ozTicket t)) &&
+                             (Just (ozGrantApp grant) /= ozTicketDlg (ozTicket t))) ||
+                             (ozGrantExp grant <= now)) $ Boom.unauthorized "Invalid grant"
+                      reissueAction c app (Just grant) mext mid mscope t
+                    Left e -> Boom.forbidden e
+            Left e -> Boom.unauthorized (e <|> "Invalid application")
+        Left e -> hawkAuthFail e
+
+    reissueAction :: ServerCredentials -> OzApp -> Maybe OzGrant -> Maybe OzExt
+                   -> Maybe OzAppId -> Maybe OzScope -> OzSealedTicket -> ActionM OzSealedTicket
+    reissueAction creds a mgrant mext mid mscope t = do
+      res <- Ticket.reissue ozSecret a mgrant (opts mext) mscope mid t
+      either Boom.forbidden return res
+      where
+        opts (Just ext) = ozTicketOpts { ticketOptsExt = ext }
+        opts Nothing = ozTicketOpts
 
     -- Authenticates an application request and if valid, exchanges
     -- the provided rsvp with a ticket.
-    rsvp :: RsvpRequest -> ActionM OzTicket
-    rsvp (RsvpRequest r) = undefined
+    rsvp :: RsvpRequest -> ActionM OzSealedTicket
+    rsvp (RsvpRequest r) = do
+      res <- request >>= authenticate ozSecret ozTicketOpts ozHawk
+      case res of
+        Right (AuthSuccess c t a) -> do
+          when (ozTicketUser (ozTicket t) == Nothing) $
+            Boom.unauthorized "User ticket cannot be used on an application endpoint"
+          mt <- liftIO $ Ticket.parse ozTicketOpts ozSecret (encodeUtf8 r)
+          case mt of
+            Right envelope -> do
+              when (ozTicketApp (ozTicket envelope) /= (ozTicketApp (ozTicket t))) $
+                Boom.forbidden "Mismatiching ticket and rsvp apps"
+              now <- liftIO $ getPOSIXTime
+              when (ozTicketExp (ozTicket envelope) <= now) $
+                Boom.forbidden "Expired rsvp"
+              case ozTicketGrant (ozTicket envelope) of
+                Just gid -> do
+                  mgrant <- liftIO $ ozLoadGrant gid
+                  case mgrant of
+                    Right (grant, mext) -> do
+                      when ((ozGrantApp grant /= ozTicketApp (ozTicket envelope)) ||
+                            (ozGrantExp grant <= now)) $ Boom.forbidden "Invalid grant"
+                      appCfg <- liftIO $ ozLoadApp (ozTicketApp (ozTicket envelope))
+                      case appCfg of
+                        Right app -> do
+                          let opts' = case mext of
+                                        Just ext -> ozTicketOpts { ticketOptsExt = ext }
+                                        Nothing -> ozTicketOpts
+                          res <- Ticket.issue ozSecret app (Just grant) opts'
+                          either Boom.forbidden return res
+                        Left e -> Boom.forbidden (e <|> "Invalid application")
+                    Left e -> Boom.forbidden e -- probably forbidden
+                Nothing -> Boom.forbidden "Missing grant id"
+            Left e -> Boom.forbidden e
+        Left f -> hawkAuthFail f
 
     -- Scotty action to check the Authorization header
     hawkAuthAction :: ActionM (ServerCredentials, ServerAuthArtifacts)
@@ -97,7 +160,7 @@ ozApp OzServerOpts{..} = scottyApp $ do
       let creds = liftIO . liftM (fmap appCreds) . ozLoadApp
       res <- Hawk.authenticateRequest ozHawk creds req payload
       case res of
-        Right (AuthSuccess c a) -> return (c, a)
+        Right (AuthSuccess c _ a) -> return (c, a)
         Left f                  -> hawkAuthFail f
 
     -- respond to failed hawk authentication
@@ -122,83 +185,5 @@ ozApp OzServerOpts{..} = scottyApp $ do
       json a
     ejson (Left e) = Boom.internal e
 
-appCreds :: OzApp -> Hawk.ServerCredentials
-appCreds OzApp{..} = Hawk.ServerCredentials
-  { scKey = ozAppKey
-  , scAlgorithm = ozAppAlgorithm
-  , scUser = ""  -- fixme: ???
-  , scApp = Just ozAppId
-  , scDlg = Nothing  -- fixme: ???
-  }
-
-{-
-
-hawkAuthMiddleware :: OzServerOpts -> Middleware
-hawkAuthMiddleware opts app req respond = do
-  res <- authenticateRequest opts' creds req Nothing
-  case res of
-    Right (AuthSuccess creds arts) -> app req respond
-    Left _ -> respond err
-  where
-    opts' = undefined
-    err = reponseLBS status401 [] "Hawk auth failed"
--}
-
-{-
-endpoints.app(req, payload, options, callback)
-
-Authenticates an application request and if valid, issues an application ticket where:
-
-req - the node HTTP server request object.
-payload - this argument is ignored and is defined only to keep the endpoint method signature consistent with the other endpoints.
-options - protocol configuration options where:
-encryptionPassword - required.
-loadAppFunc - required.
-ticket - optional ticket options used for parsing and issuance.
-hawk - optional Hawk configuration object. Defaults to the Hawk defaults.
-callback - the method used to return the request result with signature function(err, ticket) where:
-err - an error condition.
-ticket - a ticket response object.
--}
-
-
-
-{-
-endpoints.reissue(req, payload, options, callback)
-
-Reissue an existing ticket (the ticket used to authenticate the request) where:
-
-req - the node HTTP server request object.
-payload - The HTTP request payload fully parsed into an object with the following optional keys:
-issueTo - a different application identifier than the one of the current application. Used to delegate access between applications. Defaults to the current application.
-scope - an array of scope strings which must be a subset of the ticket's granted scope. Defaults to the original ticket scope.
-options - protocol configuration options where:
-encryptionPassword - required.
-loadAppFunc - required.
-loadGrantFunc - required.
-ticket - optional ticket options used for parsing and issuance.
-hawk - optional Hawk configuration object. Defaults to the Hawk defaults.
-callback - the method used to return the request result with signature function(err, ticket) where:
-err - an error condition.
-ticket - a ticket response object.
--}
-
-{-
-endpoints.rsvp(req, payload, options, callback)
-
-Authenticates an application request and if valid, exchanges the provided rsvp with a ticket where:
-
-req - the node HTTP server request object.
-payload - The HTTP request payload fully parsed into an object with the following keys:
-rsvp - the required rsvp string provided to the user to bring back to the application after granting authorization.
-options - protocol configuration options where:
-encryptionPassword - required.
-loadAppFunc - required.
-loadGrantFunc - required.
-ticket - optional ticket options used for parsing and issuance.
-hawk - optional Hawk configuration object. Defaults to the Hawk defaults.
-callback - the method used to return the request result with signature function(err, ticket) where:
-err - an error condition.
-ticket - a ticket response object.
-
--}
+appCreds :: OzApp -> (Hawk.ServerCredentials, ())
+appCreds OzApp{..} = (Hawk.ServerCredentials ozAppKey ozAppAlgorithm, ())

@@ -79,6 +79,7 @@ library
                      , Network.Hawk
                      , Network.Hawk.Types
                      , Network.Hawk.Server
+                     , Network.Hawk.Server.Types
                      , Network.Hawk.Client
                      , Network.Oz
                      , Network.Oz.Application

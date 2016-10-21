@@ -22,7 +22,6 @@ import           Web.Scotty.Trans
 
 -- fixme: can't figure out scotty custom error types, so am doing lame
 -- conversion of status codes to strings.
-
 {-
 import Control.Monad.Error
 

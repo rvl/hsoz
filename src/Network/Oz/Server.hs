@@ -4,66 +4,79 @@
 -- | Functions for implementing an Oz server.
 
 module Network.Oz.Server
-  ( authenticateRequest
-  --, authenticate
+  ( authenticate
+  , authenticateExpired
+  , authenticate'
+  , CheckExpiration(..)
   ) where
 
+import           Control.Monad          (when)
 import           Control.Monad.IO.Class (MonadIO (..))
 import           Data.ByteString        (ByteString)
 import           Data.Maybe             (fromMaybe)
 import           Data.Text              (Text)
-import           Data.Text.Encoding     (encodeUtf8)
+import           Data.Text.Encoding     (encodeUtf8, decodeUtf8)
 import           Data.Time.Clock.POSIX  (getPOSIXTime)
 import           Network.Wai
 
-import           Network.Hawk.Server    (AuthFail (..), AuthResult,
-                                         AuthSuccess (..), scApp, scDlg, shaApp,
-                                         shaDlg)
+import           Network.Hawk.Server    (AuthFail (..), AuthResult, AuthResult' (..),
+                                         AuthSuccess (..),
+                                         ServerCredentials(..),
+                                         ServerAuthArtifacts(..))
 import qualified Network.Hawk.Server    as Hawk
 import           Network.Hawk.Types
-import           Network.Oz.Ticket
+import qualified Network.Oz.Ticket      as Ticket
 import           Network.Oz.Types
+
+-- data OzSuccess = OzSuccess OzSealedTicket ServerAuthArtifacts
+-- type OzAuthResult = AuthResult' OzSuccess
+
+data CheckExpiration = CheckExpiration | AllowExpired deriving Show
 
 -- | Authenticates a 'Network.Wai.Request' using Hawk
 -- 'Network.Hawk.Server.authenticateRequest'. The Oz ticket is
 -- decrypted and decoded from the Hawk attributes.
-authenticateRequest :: forall m. MonadIO m => Key -> TicketOpts -> Hawk.AuthReqOpts -> Request -> m AuthResult
--- goes to Network.Hawk.Server.authenticateRequest
-authenticateRequest p opts hawkOpts req = check <$> Hawk.authenticateRequest hawkOpts creds req Nothing
-  where
-    check :: AuthResult -> AuthResult
-    check r@(Right (AuthSuccess c@ServerCredentials{..} a@ServerAuthArtifacts{..}))
-      | scApp /= shaApp =
-          Left $ AuthFailUnauthorized "Mismatching application id" (Just c) (Just a)
-      | scDlg /= shaDlg && scDlg /= Nothing =
-          Left $ AuthFailUnauthorized "Mismatching delegated application id" (Just c) (Just a)
-      | otherwise = Left $ AuthFailBadRequest "hello there" Nothing
+authenticate :: forall m. MonadIO m => Key -> TicketOpts -> Hawk.AuthReqOpts -> Request
+             -> m (AuthResult OzSealedTicket)
+authenticate = authenticate' CheckExpiration
 
-    creds :: OzAppId -> m (Either String Hawk.ServerCredentials)
-    creds cid = do
-      t <- liftIO $ ticket (encodeUtf8 cid)
-      return (fmap ticketCreds t)
+-- | Same as 'authenticate' but expired Oz tickets are permitted.
+authenticateExpired :: forall m. MonadIO m => Key -> TicketOpts -> Hawk.AuthReqOpts -> Request
+                    -> m (AuthResult OzSealedTicket)
+authenticateExpired = authenticate' AllowExpired
+
+-- | 'authenticate' and 'authenticateExpired' are written in terms of
+-- this function.
+authenticate' :: forall m. MonadIO m => CheckExpiration -> Key -> TicketOpts -> Hawk.AuthReqOpts -> Request
+                 -> m (AuthResult OzSealedTicket)
+authenticate' ce p opts hawkOpts req =
+  check <$> Hawk.authenticateRequest hawkOpts creds req Nothing
+  where
+    check :: AuthResult OzSealedTicket -> AuthResult OzSealedTicket
+    check r = r >>= check'
+      where
+        check' r@(AuthSuccess c t@OzSealedTicket{..} a@ServerAuthArtifacts{..})
+          | ozTicketApp ozTicket /= fromMaybe "" shaApp =
+            Left $ AuthFailUnauthorized "Mismatching application id" (Just c) (Just a)
+          | ozTicketDlg ozTicket /= fmap decodeUtf8 shaDlg && ozTicketDlg ozTicket /= Nothing =
+            Left $ AuthFailUnauthorized "Mismatching delegated application id" (Just c) (Just a)
+          | otherwise = Right r
+
+    creds :: OzAppId -> m (Either String (Hawk.ServerCredentials, OzSealedTicket))
+    creds cid = liftIO $ fmap ticketCreds <$> ticket (encodeUtf8 cid)
 
     ticket :: ByteString -> IO (Either String OzSealedTicket)
-    ticket t = do
-      res <- parseTicket opts p t
-      case res of
-        Right sealed -> do
-          now <- getPOSIXTime
-          return $ if ozTicketExp (ozTicket sealed) <= now
-            then Left "Expired ticket"
-            else Right sealed
-        Left e -> return $ Left e
+    -- fixme: maybe use case instead of either
+    ticket t = Ticket.parse opts p t >>= either (return . Left) checkExpiry
 
-ticketCreds :: OzSealedTicket -> Hawk.ServerCredentials
-ticketCreds OzSealedTicket{..} = Hawk.ServerCredentials
-  { scKey = ozTicketKey
-  , scAlgorithm = ozTicketAlgorithm
-  , scUser = fromMaybe "" (ozTicketUser ozTicket)
-  , scApp = Just (ozTicketApp ozTicket)
-  , scDlg = fmap encodeUtf8 (ozTicketDlg ozTicket)
-  }
+    checkExpiry sealed = case ce of
+      CheckExpiration -> do
+        now <- getPOSIXTime
+        return $ if ozTicketExp (ozTicket sealed) <= now
+          then Left "Expired ticket"
+          else Right sealed
+      AllowExpired -> return $ Right sealed
 
-authenticate :: MonadIO m => Text -> Key -> TicketOpts -> Hawk.AuthReqOpts
-             -> m (Either String (ServerCredentials, ServerAuthArtifacts))
-authenticate = fail "unimplemented"
+ticketCreds :: OzSealedTicket -> (Hawk.ServerCredentials, OzSealedTicket)
+ticketCreds t@OzSealedTicket{..} = (c, t)
+  where c = Hawk.ServerCredentials ozTicketKey ozTicketAlgorithm

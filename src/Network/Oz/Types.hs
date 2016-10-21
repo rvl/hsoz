@@ -88,7 +88,7 @@ data OzGrant = OzGrant
 data OzExt = OzExt
              { ozExtPublic  :: Object -- ^ Public ext; included in response
              , ozExtPrivate :: Object -- ^ Private ext; only in encoded ticket.
-             } deriving (Show, Generic)
+             } deriving (Show, Eq, Generic)
 
 instance Monoid OzExt where
   mempty = OzExt mempty mempty
@@ -177,7 +177,7 @@ defaultTicketOpts = TicketOpts 3600 60 True Iron.defaults 32 (HawkAlgo SHA256) m
 type OzLoadApp = OzAppId -> IO (Either String OzApp)
 
 -- | User-supplied function to look up an Oz grant by its identifier.
-type OzLoadGrant = OzGrantId -> IO (Either String (OzGrant, OzExt))
+type OzLoadGrant = OzGrantId -> IO (Either String (OzGrant, Maybe OzExt))
 
 -- | Describes the URL configuration of the Oz server.
 data Endpoints = Endpoints

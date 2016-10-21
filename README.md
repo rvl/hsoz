@@ -16,7 +16,7 @@ This is an in-progress experiment in implementing the protocol in
 Haskell.
 
 Full documentation for what is implemented so far is available at:
-[![haddock](https://rodney.id.au/docs/haddock.png) https://rodney.id.au/docs/hsoz/](https://rodney.id.au/docs/hsoz/)
+https://rodney.id.au/docs/hsoz/
 
 
 ## Building with Stack
