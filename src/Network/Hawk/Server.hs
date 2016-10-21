@@ -121,18 +121,18 @@ authenticate opts getCreds req@HawkReq{..} = do
     Right sah@AuthorizationHeader{..} -> do
       creds <- getCreds sahId
       return $ case creds of
-        Right creds' -> serverAuthenticate' now opts creds' req sah
-        Left e -> Left (AuthFailUnauthorized e Nothing (Just (serverAuthArtifacts req sah)))
+        Right creds' -> authenticate' now opts creds' req sah
+        Left e -> Left (AuthFailUnauthorized e Nothing (Just (headerArtifacts req sah)))
     Left err -> return $ Left err
 
-serverAuthenticate' :: POSIXTime -> AuthOpts -> (ServerCredentials, t)
-                    -> HawkReq -> AuthorizationHeader -> AuthResult t
-serverAuthenticate' now opts (creds, t) hrq@HawkReq{..} sah@AuthorizationHeader{..} = do
+authenticate' :: POSIXTime -> AuthOpts -> (Credentials, t)
+              -> HawkReq -> AuthorizationHeader -> AuthResult t
+authenticate' now opts (creds, t) hrq@HawkReq{..} sah@AuthorizationHeader{..} = do
   -- fixme: check !credentials => empty credentials
   -- fixme: check !credentials.key || !credentials.algorithm => invalid credentials
   -- fixme: check credentials.algorithm? => unknown algorithm
-  let arts = serverAuthArtifacts hrq sah
-  let doCheck = authResult creds t arts
+  let arts = headerArtifacts hrq sah
+  let doCheck = authResult creds arts t
   let mac = serverMac creds arts HawkHeader
   if mac `fixedTimeEq` sahMac then do
     doCheck $ checkPayloadHash (scAlgorithm creds) sahHash hrqPayload
@@ -142,14 +142,14 @@ serverAuthenticate' now opts (creds, t) hrq@HawkReq{..} sah@AuthorizationHeader{
     else Left (AuthFailUnauthorized "Bad mac" (Just creds) (Just arts))
 
 -- | Maps auth status into the more detailed success/failure type
-authResult :: ServerCredentials -> t -> ServerAuthArtifacts
+authResult :: Credentials -> HeaderArtifacts -> t
            -> Either String a -> Either AuthFail (AuthSuccess t)
-authResult c t a (Right _) = Right (AuthSuccess c t a)
-authResult c _ a (Left e)  = Left (AuthFailUnauthorized e (Just c) (Just a))
+authResult c a t (Right _) = Right (AuthSuccess c a t)
+authResult c a _ (Left e)  = Left (AuthFailUnauthorized e (Just c) (Just a))
 
-serverAuthArtifacts :: HawkReq -> AuthorizationHeader -> ServerAuthArtifacts
-serverAuthArtifacts HawkReq{..} AuthorizationHeader{..} =
-  ServerAuthArtifacts hrqMethod hrqHost hrqPort hrqUrl
+headerArtifacts :: HawkReq -> AuthorizationHeader -> HeaderArtifacts
+headerArtifacts HawkReq{..} AuthorizationHeader{..} =
+  HeaderArtifacts hrqMethod hrqHost hrqPort hrqUrl
     sahId sahTs sahNonce sahMac sahHash sahExt (fmap decodeUtf8 sahApp) sahDlg
 
 
@@ -158,7 +158,7 @@ serverAuthArtifacts HawkReq{..} AuthorizationHeader{..} =
 -- previous call to 'authenticateRequest' (or 'authenticate').
 --
 -- If a payload is supplied, its hash will be included in the header.
-header :: ServerCredentials -> ServerAuthArtifacts -> Maybe PayloadInfo -> Header
+header :: Credentials -> HeaderArtifacts -> Maybe PayloadInfo -> Header
 header creds arts payload = (hServerAuthorization, hawkHeaderString (catMaybes parts))
   where
     parts :: [Maybe (ByteString, ByteString)]
@@ -169,8 +169,8 @@ header creds arts payload = (hServerAuthorization, hawkHeaderString (catMaybes p
     ext = escapeHeaderAttribute <$> (shaExt arts)
     mac = serverMac creds arts HawkResponse
 
-serverMac :: ServerCredentials -> ServerAuthArtifacts -> HawkType -> ByteString
-serverMac ServerCredentials{..} ServerAuthArtifacts{..} =
+serverMac :: Credentials -> HeaderArtifacts -> HawkType -> ByteString
+serverMac Credentials{..} HeaderArtifacts{..} =
   calculateMac scAlgorithm scKey
     shaTimestamp shaNonce shaMethod shaResource shaHost shaPort
 

@@ -21,15 +21,12 @@ import           Network.Wai
 
 import           Network.Hawk.Server    (AuthFail (..), AuthResult, AuthResult' (..),
                                          AuthSuccess (..),
-                                         ServerCredentials(..),
-                                         ServerAuthArtifacts(..))
+                                         Credentials(..),
+                                         HeaderArtifacts(..))
 import qualified Network.Hawk.Server    as Hawk
 import           Network.Hawk.Types
 import qualified Network.Oz.Ticket      as Ticket
 import           Network.Oz.Types
-
--- data OzSuccess = OzSuccess OzSealedTicket ServerAuthArtifacts
--- type OzAuthResult = AuthResult' OzSuccess
 
 data CheckExpiration = CheckExpiration | AllowExpired deriving Show
 
@@ -55,14 +52,14 @@ authenticate' ce p opts hawkOpts req =
     check :: AuthResult OzSealedTicket -> AuthResult OzSealedTicket
     check r = r >>= check'
       where
-        check' r@(AuthSuccess c t@OzSealedTicket{..} a@ServerAuthArtifacts{..})
+        check' r@(AuthSuccess c a@HeaderArtifacts{..} t@OzSealedTicket{..})
           | ozTicketApp ozTicket /= fromMaybe "" shaApp =
             Left $ AuthFailUnauthorized "Mismatching application id" (Just c) (Just a)
           | ozTicketDlg ozTicket /= fmap decodeUtf8 shaDlg && ozTicketDlg ozTicket /= Nothing =
             Left $ AuthFailUnauthorized "Mismatching delegated application id" (Just c) (Just a)
           | otherwise = Right r
 
-    creds :: OzAppId -> m (Either String (Hawk.ServerCredentials, OzSealedTicket))
+    creds :: OzAppId -> m (Either String (Hawk.Credentials, OzSealedTicket))
     creds cid = liftIO $ fmap ticketCreds <$> ticket (encodeUtf8 cid)
 
     ticket :: ByteString -> IO (Either String OzSealedTicket)
@@ -77,6 +74,6 @@ authenticate' ce p opts hawkOpts req =
           else Right sealed
       AllowExpired -> return $ Right sealed
 
-ticketCreds :: OzSealedTicket -> (Hawk.ServerCredentials, OzSealedTicket)
+ticketCreds :: OzSealedTicket -> (Hawk.Credentials, OzSealedTicket)
 ticketCreds t@OzSealedTicket{..} = (c, t)
-  where c = Hawk.ServerCredentials ozTicketKey ozTicketAlgorithm
+  where c = Hawk.Credentials ozTicketKey ozTicketAlgorithm

@@ -31,9 +31,8 @@ import           Network.Wai
 import           Web.Scotty
 import           Data.Time.Clock.POSIX     (getPOSIXTime)
 
-import           Network.Hawk.Server       (AuthSuccess (..))
+import           Network.Hawk.Server       (AuthSuccess (..), Key (..), HeaderArtifacts (..))
 import qualified Network.Hawk.Server       as Hawk
-import           Network.Hawk.Server.Types
 import qualified Network.Oz.Boom           as Boom
 import           Network.Oz.Internal.Types
 import           Network.Oz.JSON
@@ -82,7 +81,7 @@ ozApp OzServerOpts{..} = scottyApp $ do
     reissue (ReissueRequest mid mscope) = do
       res <- request >>= authenticateExpired ozSecret ozTicketOpts ozHawk
       case res of
-        Right (AuthSuccess c t a) -> do
+        Right (AuthSuccess c a t) -> do
           let appId = ozTicketApp (ozTicket t)
           appCfg <- liftIO $ ozLoadApp appId
           case appCfg of
@@ -104,7 +103,7 @@ ozApp OzServerOpts{..} = scottyApp $ do
             Left e -> Boom.unauthorized (e <|> "Invalid application")
         Left e -> hawkAuthFail e
 
-    reissueAction :: ServerCredentials -> OzApp -> Maybe OzGrant -> Maybe OzExt
+    reissueAction :: Hawk.Credentials -> OzApp -> Maybe OzGrant -> Maybe OzExt
                    -> Maybe OzAppId -> Maybe OzScope -> OzSealedTicket -> ActionM OzSealedTicket
     reissueAction creds a mgrant mext mid mscope t = do
       res <- Ticket.reissue ozSecret a mgrant (opts mext) mscope mid t
@@ -119,7 +118,7 @@ ozApp OzServerOpts{..} = scottyApp $ do
     rsvp (RsvpRequest r) = do
       res <- request >>= authenticate ozSecret ozTicketOpts ozHawk
       case res of
-        Right (AuthSuccess c t a) -> do
+        Right (AuthSuccess c a t) -> do
           when (ozTicketUser (ozTicket t) == Nothing) $
             Boom.unauthorized "User ticket cannot be used on an application endpoint"
           mt <- liftIO $ Ticket.parse ozTicketOpts ozSecret (encodeUtf8 r)
@@ -152,7 +151,7 @@ ozApp OzServerOpts{..} = scottyApp $ do
         Left f -> hawkAuthFail f
 
     -- Scotty action to check the Authorization header
-    hawkAuthAction :: ActionM (ServerCredentials, ServerAuthArtifacts)
+    hawkAuthAction :: ActionM (Hawk.Credentials, Hawk.HeaderArtifacts)
     hawkAuthAction = do
       req <- request
       -- payload <- fmap Just body  -- fixme: check if it's compatible with jsonData
@@ -160,7 +159,7 @@ ozApp OzServerOpts{..} = scottyApp $ do
       let creds = liftIO . liftM (fmap appCreds) . ozLoadApp
       res <- Hawk.authenticateRequest ozHawk creds req payload
       case res of
-        Right (AuthSuccess c _ a) -> return (c, a)
+        Right (AuthSuccess c a _) -> return (c, a)
         Left f                  -> hawkAuthFail f
 
     -- respond to failed hawk authentication
@@ -185,5 +184,5 @@ ozApp OzServerOpts{..} = scottyApp $ do
       json a
     ejson (Left e) = Boom.internal e
 
-appCreds :: OzApp -> (Hawk.ServerCredentials, ())
-appCreds OzApp{..} = (Hawk.ServerCredentials ozAppKey ozAppAlgorithm, ())
+appCreds :: OzApp -> (Hawk.Credentials, ())
+appCreds OzApp{..} = (Hawk.Credentials ozAppKey ozAppAlgorithm, ())

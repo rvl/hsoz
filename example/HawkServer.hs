@@ -22,8 +22,8 @@ import qualified Network.Hawk.Server       as Hawk
 serverMain :: IO ()
 serverMain = run 8000 app
 
-auth :: ClientId -> IO (Either String (ServerCredentials, Text))
-auth id = return $ Right (ServerCredentials sharedKey (HawkAlgo SHA256), "Steve")
+auth :: ClientId -> IO (Either String (Credentials, Text))
+auth id = return $ Right (Credentials sharedKey (HawkAlgo SHA256), "Steve")
 
 app :: Application
 app req respond = do
@@ -31,7 +31,7 @@ app req respond = do
   payload <- lazyRequestBody req
   res <- Hawk.authenticateRequest opts auth req (Just payload)
   respond $ case res of
-    Right (Hawk.AuthSuccess creds user artifacts) -> do
+    Right (Hawk.AuthSuccess creds artifacts user) -> do
       let ext = decodeUtf8 <$> shaExt artifacts
       let payload = textPayload $ "Hello " <> user <> maybe "" (" " <>) ext
       let autho = Hawk.header creds artifacts (Just payload)

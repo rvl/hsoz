@@ -6,8 +6,8 @@ module Network.Hawk.Server.Types
   , AuthResult'(..)
   , AuthFail(..)
   , AuthSuccess(..)
-  , ServerCredentials(..)
-  , ServerAuthArtifacts(..)
+  , Credentials(..)
+  , HeaderArtifacts(..)
   , CredentialsFunc
   , module Network.Hawk.Types
   ) where
@@ -29,32 +29,29 @@ type AuthResult' r = Either AuthFail r
 -- information necessary to generate a suitable response for the
 -- client. In the case of a stale timestamp, the client may try
 -- another authenticated request.
-data AuthFail = AuthFailBadRequest String (Maybe ServerAuthArtifacts)
-              | AuthFailUnauthorized String (Maybe ServerCredentials) (Maybe ServerAuthArtifacts)
-              | AuthFailStaleTimeStamp String ServerCredentials ServerAuthArtifacts
+data AuthFail = AuthFailBadRequest String (Maybe HeaderArtifacts)
+              | AuthFailUnauthorized String (Maybe Credentials) (Maybe HeaderArtifacts)
+              | AuthFailStaleTimeStamp String Credentials HeaderArtifacts
               deriving Show
 
--- | The result of a successful authentication is a set of credentials
--- and "artifacts".
-data AuthSuccess t = AuthSuccess ServerCredentials t ServerAuthArtifacts
+-- | Successful authentication produces a set of credentials and
+-- "artifacts". Also included in the result is the result of
+-- 'CredentialsFunc'.
+data AuthSuccess t = AuthSuccess Credentials HeaderArtifacts t
 
 ----------------------------------------------------------------------------
 
 -- | The set of data the server requires for key-based hash
 -- verification of artifacts.
-data ServerCredentials = ServerCredentials
+data Credentials = Credentials
   { scKey       :: Key -- ^ Key
   , scAlgorithm :: HawkAlgo -- ^ HMAC
-  -- fixme: remove these:
-  -- , scUser      :: Text
-  -- , scApp       :: Maybe Text  -- fixme: maybe not Maybe
-  -- , scDlg       :: Maybe ByteString
   } deriving (Show, Generic)
 
--- | Artifacts are the attributes which are included in the
+-- | HeaderArtifacts are the attributes which are included in the
 -- verification. The terminology (and spelling) come from the original
 -- Javascript implementation of Hawk.
-data ServerAuthArtifacts = ServerAuthArtifacts
+data HeaderArtifacts = HeaderArtifacts
   { shaMethod    :: Method
   , shaHost      :: ByteString
   , shaPort      :: Maybe Int
@@ -72,4 +69,4 @@ data ServerAuthArtifacts = ServerAuthArtifacts
 
 -- | A user-supplied callback to get credentials from a client
 -- identifier.
-type CredentialsFunc m t = ClientId -> m (Either String (ServerCredentials, t))
+type CredentialsFunc m t = ClientId -> m (Either String (Credentials, t))

@@ -13,7 +13,7 @@ module Network.Hawk.Client
        , Credentials(..)
        , Header(..)
        , Authorization
-       , ClientHeaderArtifacts
+       , HeaderArtifacts
        , module Network.Hawk.Types
        ) where
 
@@ -61,7 +61,7 @@ data Credentials = Credentials
 -- | Struct for attributes which will be encoded in the Hawk
 -- @Authorization@ header. The term "artifacts" comes from the
 -- original Javascript implementation of Hawk.
-data ClientHeaderArtifacts = ClientHeaderArtifacts
+data HeaderArtifacts = HeaderArtifacts
   { chaTimestamp :: POSIXTime
   , chaNonce     :: ByteString
   , chaMethod    :: Method
@@ -77,7 +77,7 @@ data ClientHeaderArtifacts = ClientHeaderArtifacts
 -- | The result of Hawk header generation.
 data Header = Header
   { hdrField     :: Authorization  -- ^ Value of @Authorization@ header.
-  , hdrArtifacts :: ClientHeaderArtifacts  -- ^ Not sure if this is needed by users.
+  , hdrArtifacts :: HeaderArtifacts  -- ^ Not sure if this is needed by users.
   } deriving (Show, Generic)
 
 -- | Generates the Hawk authentication header for a request.
@@ -105,15 +105,15 @@ headerBase url method creds payload ext app dlg = do
 clientHeaderArtifacts :: POSIXTime -> ByteString -> Method -> ByteString
                       -> Maybe ByteString -> Maybe ByteString
                       -> Maybe Text -> Maybe Text
-                      -> ClientHeaderArtifacts
+                      -> HeaderArtifacts
 clientHeaderArtifacts now nonce method url hash ext app dlg = case splitUrl url of
   Just (SplitURL host port resource) ->
-    ClientHeaderArtifacts now nonce method host port resource hash ext app dlg
+    HeaderArtifacts now nonce method host port resource hash ext app dlg
   Nothing ->
-    ClientHeaderArtifacts now nonce method "" Nothing url hash ext app dlg
+    HeaderArtifacts now nonce method "" Nothing url hash ext app dlg
 
-clientHawkAuth :: Credentials -> ClientHeaderArtifacts -> ByteString
-clientHawkAuth creds arts@ClientHeaderArtifacts{..} = hawkHeaderString (hawkHeaderItems items)
+clientHawkAuth :: Credentials -> HeaderArtifacts -> ByteString
+clientHawkAuth creds arts@HeaderArtifacts{..} = hawkHeaderString (hawkHeaderItems items)
   where
     items = [ ("id", (Just . encodeUtf8 . ccId) creds)
             , ("ts", (Just . S8.pack . show . round) chaTimestamp)
@@ -125,8 +125,8 @@ clientHawkAuth creds arts@ClientHeaderArtifacts{..} = hawkHeaderString (hawkHead
             , ("dlg", encodeUtf8 <$> chaDlg)
             ]
 
-clientMac :: Credentials -> ClientHeaderArtifacts -> HawkType -> ByteString
-clientMac Credentials{..} ClientHeaderArtifacts{..} =
+clientMac :: Credentials -> HeaderArtifacts -> HawkType -> ByteString
+clientMac Credentials{..} HeaderArtifacts{..} =
   calculateMac ccAlgorithm ccKey
       chaTimestamp chaNonce chaMethod chaResource chaHost chaPort
 
@@ -163,14 +163,14 @@ data ServerAuthorizationCheck = ServerAuthorizationNotRequired
                               deriving Show
 
 -- | Validates the server response.
-authenticate :: Response BL.ByteString -> Credentials -> ClientHeaderArtifacts
+authenticate :: Response BL.ByteString -> Credentials -> HeaderArtifacts
                       -> Maybe BL.ByteString -> ServerAuthorizationCheck
                       -> IO (Either String ())
 authenticate r creds artifacts payload saCheck = do
   now <- getPOSIXTime
   return $ clientAuthenticate' r creds artifacts payload saCheck now
 
-clientAuthenticate' :: Response BL.ByteString -> Credentials -> ClientHeaderArtifacts
+clientAuthenticate' :: Response BL.ByteString -> Credentials -> HeaderArtifacts
                        -> Maybe BL.ByteString -> ServerAuthorizationCheck
                        -> POSIXTime -> Either String ()
 clientAuthenticate' r creds artifacts payload saCheck now = do
@@ -217,7 +217,7 @@ checkWwwAuthenticateHeader creds w = do
 calculateTsMac :: POSIXTime -> Credentials -> ByteString
 calculateTsMac = undefined  -- fixme: achtung minen
 
-checkServerAuthorizationHeader :: Credentials -> ClientHeaderArtifacts
+checkServerAuthorizationHeader :: Credentials -> HeaderArtifacts
                                   -> ServerAuthorizationCheck -> POSIXTime
                                   -> Maybe ByteString
                                   -> Either String (Maybe ServerAuthorizationReplyHeader)
