@@ -6,7 +6,7 @@
 
 module Network.Oz.Client
   ( header
-  , withSession
+  -- , withSession
   , reissue
   , Endpoints(..)
   , defaultEndpoints
@@ -28,8 +28,10 @@ import           Data.IORef                (newIORef, readIORef, writeIORef)
 
 -- import Network.Wai (Request, requestHeaderHost, requestHeaders, remoteHost, requestMethod, rawPathInfo, rawQueryString)
 
+{-
 import           Network.Wreq.Session      (Session)
 import qualified Network.Wreq.Session      as S
+-}
 
 import qualified Network.Hawk.Client       as Hawk
 import           Network.Oz.Types
@@ -46,6 +48,7 @@ header uri method t@OzSealedTicket{..} = Hawk.header uri method creds Nothing No
 ticketCreds :: OzSealedTicket -> Hawk.Credentials
 ticketCreds OzSealedTicket{..} = Hawk.Credentials ozTicketId ozTicketKey ozTicketAlgorithm
 
+{-
 -- | Work in progress.
 withSession :: Endpoints -> Text -> Hawk.Credentials -> (Session -> IO a) -> IO a
 withSession ep uri creds act = do
@@ -61,6 +64,7 @@ withSession ep uri creds act = do
     shouldRetry :: SomeException -> Bool
     -- fixme: catch unauthorized and retry with auth
     shouldRetry = managerRetryableException defaultManagerSettings
+-}
 
 -- | Re-issues (refreshes) a ticket.
 reissue :: Endpoints -> Hawk.Credentials -> OzTicket -> IO (Either String OzTicket)

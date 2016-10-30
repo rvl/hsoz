@@ -18,7 +18,6 @@ module Network.Hawk.Client
        , module Network.Hawk.Types
        ) where
 
-import           Control.Lens              ((^.), (^?))
 import           Control.Monad             (join)
 import           Control.Monad.IO.Class    (MonadIO, liftIO)
 import           Crypto.Hash
@@ -39,11 +38,11 @@ import           Data.Text.Encoding        (encodeUtf8)
 import           Data.Time.Clock           (NominalDiffTime)
 import           Data.Time.Clock.POSIX
 import           GHC.Generics
-import           Network.HTTP.Types.Header (hContentType, hWWWAuthenticate)
+import           Network.HTTP.Types.Header (hContentType, hWWWAuthenticate, HeaderName)
 import           Network.HTTP.Types.Method (Method)
 import           Network.HTTP.Types.URI    (extractPath)
+import           Network.HTTP.Client       (Response, responseHeaders)
 import           Network.Socket            (PortNumber, SockAddr (..))
-import           Network.Wreq              hiding (header)
 import           URI.ByteString            (authorityHost, authorityPort,
                                             hostBS, laxURIParserOptions,
                                             parseURI, portNumber, uriAuthority)
@@ -176,15 +175,19 @@ clientAuthenticate' :: Response BL.ByteString -> Credentials -> HeaderArtifacts
                        -> Maybe BL.ByteString -> ServerAuthorizationCheck
                        -> POSIXTime -> Either String ()
 clientAuthenticate' r creds artifacts payload saCheck now = do
-  let w = r ^? responseHeader hWWWAuthenticate
+  let w = responseHeader hWWWAuthenticate r
   ts <- mapM (checkWwwAuthenticateHeader creds) w
-  let sa = r ^? responseHeader hServerAuthorization
+  let sa = responseHeader hServerAuthorization r
   sarh <- checkServerAuthorizationHeader creds artifacts saCheck now sa
-  let ct = r ^. responseHeader hContentType
+  let ct = fromMaybe "" $ responseHeader hContentType r
   let payload' = PayloadInfo ct <$> payload
   case sarh of
     Just sarh' -> checkPayloadHash (ccAlgorithm creds) (sarhHash sarh') payload'
     Nothing -> Right ()
+
+-- fixme: lens version from wreq is better
+responseHeader :: HeaderName -> Response body -> Maybe ByteString
+responseHeader h = lookup h . responseHeaders
 
 -- | The protocol relies on a clock sync between the client and
 -- server. To accomplish this, the server informs the client of its
