@@ -40,15 +40,15 @@ import           Network.Oz.Types
 -- application identifier, the grant identifier, and an expiration.
 --
 -- This function generates the /rsvp/ string.
-rsvp :: MonadIO m => OzApp -> OzGrant -> Key -> TicketOpts -> m (Maybe ByteString)
+rsvp :: MonadIO m => OzAppId -> Maybe OzGrantId -> Key -> TicketOpts -> m (Maybe ByteString)
 rsvp app grant (Key p) TicketOpts{..} = liftIO $ do
   now <- getPOSIXTime
   Iron.sealWith ticketOptsIron (Iron.Password p) (envelope now)
   where
     envelope now = OzTicket
                    { ozTicketExp = now + ticketOptsRsvpTtl
-                   , ozTicketApp = ozAppId app
-                   , ozTicketGrant = Just (ozGrantId grant)
+                   , ozTicketApp = app
+                   , ozTicketGrant = grant
                    , ozTicketUser = Nothing
                    , ozTicketScope = []
                    , ozTicketDelegate = False
@@ -163,6 +163,8 @@ randomKey TicketOpts{..} = do
 base64 :: ByteString -> ByteString
 base64 = Iron.urlSafeBase64 . B64.encode
 
+-- | Adds the cryptographic properties to a ticket and prepares it for
+-- sending.
 generateTicket :: TicketOpts -> Key -> OzTicket -> IO (Maybe OzSealedTicket)
 generateTicket opts@TicketOpts{..} (Key p) t = do
   key <- randomKey opts

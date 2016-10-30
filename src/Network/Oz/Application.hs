@@ -1,4 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 -- | Provides a "Network.Wai" 'Network.Wai.Application' for managing
 -- Oz tickets.
@@ -8,14 +9,17 @@
 
 module Network.Oz.Application
   ( ozApp
+  , ozAuth
   , OzServerOpts(..)
   , OzLoadApp
   , OzLoadGrant
   , defaultOzServerOpts
+  , ozAppScotty
   ) where
 
 import           Control.Monad             (liftM, void, when)
 import           Control.Monad.IO.Class    (MonadIO (..), liftIO)
+import           Control.Monad.Trans.Either
 import           Control.Applicative       ((<|>))
 import           Data.Aeson.Types          (ToJSON)
 import           Data.ByteString           (ByteString)
@@ -63,7 +67,13 @@ defaultLoadGrant _ = return $ Left "ozLoadGrant not set"
 
 -- | Starts the 'Network.Wai.Application'.
 ozApp :: OzServerOpts -> IO Application
-ozApp OzServerOpts{..} = scottyApp $ do
+ozApp = scottyApp . ozAppScotty
+
+-- | The Oz endpoints are actually implemented using
+-- "Web.Scotty". This provides the 'Web.Scotty.ScottyM' application
+-- which can be embedded within other Scotty apps.
+ozAppScotty :: OzServerOpts -> ScottyM ()
+ozAppScotty OzServerOpts{..} = do
   defaultHandler Boom.errHandler
   let post' r = post . literal . T.unpack . r $ ozEndpoints
   post' endpointApp     $ app >>= ejson
@@ -76,7 +86,7 @@ ozApp OzServerOpts{..} = scottyApp $ do
       appCfg <- loadAppAction (shaApp arts)
       Ticket.issue ozSecret appCfg Nothing ozTicketOpts
 
-    -- fixme: flatten staircases
+    -- fixme: flatten staircases ... use EitherT
     reissue :: ReissueRequest -> ActionM OzSealedTicket
     reissue (ReissueRequest mid mscope) = do
       res <- request >>= authenticateExpired ozSecret ozTicketOpts ozHawk
@@ -178,11 +188,36 @@ ozApp OzServerOpts{..} = scottyApp $ do
     loadApp Nothing      = return $ Left "Invalid application object"
     loadApp (Just appId) = ozLoadApp appId
 
-    ejson :: (Show a, ToJSON a) => Either String a -> ActionM ()
-    ejson (Right a) = do
-      liftIO $ print a
-      json a
-    ejson (Left e) = Boom.internal e
+    ejson :: ToJSON a => Either String a -> ActionM ()
+    ejson = either Boom.internal json
 
 appCreds :: OzApp -> (Hawk.Credentials, ())
 appCreds OzApp{..} = (Hawk.Credentials ozAppKey ozAppAlgorithm, ())
+
+-- | "Network.Wai" 'Network.Wai.Middleware' for Oz
+-- authentication. Resources can be selectively protected by applying
+-- 'Network.Wai.ifRequest' to the middleware.
+ozAuth :: OzServerOpts -> Middleware
+ozAuth opts app req sendResponse = do
+  res <- ozAuthenticate opts req
+  case res of
+    -- fixme: store ticket in vault
+    Right _ -> app req sendResponse
+    Left e -> ozAuthFail req sendResponse e
+  where
+    ozAuthFail req sendResponse e = sendResponse $ responseLBS
+      status401
+      [ ("Content-Type", "text/plain") -- hContentType
+      , ("WWW-Authenticate", "Oz") -- fixme: make it correct
+      ]
+      "Oz authentication is required"
+
+ozAuthenticate :: MonadIO m => OzServerOpts -> Request -> m (Hawk.AuthResult OzSealedTicket)
+ozAuthenticate OzServerOpts{..} = authenticate ozSecret ozTicketOpts ozHawk
+
+-- | Helper function to get the full URL of an Oz endpoint based on
+-- the Host header in a request.
+ozAppUrl :: OzServerOpts -> (Endpoints -> Text) -> Request -> Maybe Text
+ozAppUrl OzServerOpts{ozEndpoints} ep = fmap make . requestHeaderHost
+  where
+    make host = decodeUtf8 host <> ep ozEndpoints

@@ -137,6 +137,8 @@ executable hsoz-example
                      , http-client
                      , http-types
                      , lens
+                     , lucid
+                     , scotty
                      , text
                      , transformers
                      , uri-bytestring

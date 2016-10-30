@@ -62,11 +62,11 @@ instance FromJSON OzTicket where
   parseJSON (Object v) = OzTicket
                          <$> fmap fromMsec (v .: "exp")
                          <*> v .: "app"
-                         <*> v .: "user"
-                         <*> v .: "scope"
-                         <*> v .: "grant"
-                         <*> v .: "delegate"
-                         <*> v .: "dlg"
+                         <*> v .:? "user"
+                         <*> v .:? "scope" .!= []
+                         <*> v .:? "grant"
+                         <*> v .: "delegate" .!= True
+                         <*> v .:? "dlg"
     where
       fromMsec = realToFrac . toRealFloat . (/ 1000)
 

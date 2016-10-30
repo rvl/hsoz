@@ -143,22 +143,22 @@ data OzTicket = OzTicket {
 
 -- | Ticket generation options
 data TicketOpts = TicketOpts
-                  { ticketOptsTicketTtl     :: NominalDiffTime -- ^ Ticket lifetime
-                  , ticketOptsRsvpTtl       :: NominalDiffTime -- ^ RSVP lifetime
+  { ticketOptsTicketTtl     :: NominalDiffTime -- ^ Ticket lifetime
+  , ticketOptsRsvpTtl       :: NominalDiffTime -- ^ RSVP lifetime
 
-                  -- | If false, the ticket cannot be delegated
-                  -- regardless of the application
-                  -- permissions.
-                  , ticketOptsDelegate      :: Bool
-                  -- | Overrides the default Iron configuration.
-                  , ticketOptsIron          :: Iron.Options
-                  -- | The Hawk key length in bytes.
-                  , ticketOptsKeyBytes      :: Int
-                  -- | The Hawk HMAC algorithm.
-                  , ticketOptsHmacAlgorithm :: HawkAlgo
-                  -- | Custom server data to be included in the ticket.
-                  , ticketOptsExt           :: OzExt
-                  }
+  -- | If false, the ticket cannot be delegated
+  -- regardless of the application
+  -- permissions.
+  , ticketOptsDelegate      :: Bool
+  -- | Overrides the default Iron configuration.
+  , ticketOptsIron          :: Iron.Options
+  -- | The Hawk key length in bytes.
+  , ticketOptsKeyBytes      :: Int
+  -- | The Hawk HMAC algorithm.
+  , ticketOptsHmacAlgorithm :: HawkAlgo
+  -- | Custom server data to be included in the ticket.
+  , ticketOptsExt           :: OzExt
+  }
 
 -- | Default ticket generation options. These are:
 --
