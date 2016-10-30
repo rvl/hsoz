@@ -21,19 +21,6 @@ description:
   logos.
 
   .
-  == Status
-  .
-  The status of this implementation is /somewhat complete/. Iron and
-  Hawk are /mostly complete/ and Oz is /partly complete/. A short list
-  of currently missing items:
-  .
-  * Test cases.
-  * Use of the "Data.SecureMem" package for hash equality comparisons.
-  * Iron password lookup by ID.
-  * Hawk bewits.
-  * A decent client API and ticket endpoints for Oz.
-  * Production testing in a real-world application.
-  .
   == Introduction
   .
   In the words of their principal designer:

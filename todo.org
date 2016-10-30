@@ -1,0 +1,28 @@
+* Project Status
+
+  The status of this implementation is /somewhat complete/. Iron and
+  Hawk are /mostly complete/ and Oz is /partly complete/. A short list
+  of currently missing items:
+
+** Iron
+*** TODO Use the "Data.SecureMem" package for hash equality comparisons.
+*** TODO password lookup by ID.
+
+** Hawk
+*** DONE WAI Middlewares
+    CLOSED: [2016-10-28 Fri 17:21]
+*** TODO bewit generation
+*** TODO bewit authentication
+
+** Oz
+*** TODO A decent client API and ticket endpoints for Oz
+
+** General
+*** TODO Test cases
+*** TODO Production testing in a real-world application
+*** TODO interop tests
+*** TODO remove utf8 partial functions
+*** TODO use more utils from errors package
+*** TODO split up packages
+    - avoids bring in wai and/or scotty for iron and/or hawk
+*** TODO URIs should be ByteString not Text
