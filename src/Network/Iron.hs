@@ -76,7 +76,6 @@ import qualified Data.Aeson             as JSON (eitherDecode', encode)
 import           Data.ByteString        (ByteString)
 import qualified Data.ByteString        as BS
 import qualified Data.ByteString.Base16 as B16
-import qualified Data.ByteString.Base64 as B64
 import qualified Data.ByteString.Char8  as S8
 import qualified Data.ByteString.Lazy   as BL
 import qualified Data.Map               as M
@@ -88,7 +87,6 @@ import           Data.Time.Clock        (NominalDiffTime)
 import           Data.Time.Clock.POSIX
 import           Network.Iron.Util
 import           Numeric                (showHex)
-import           Text.Read              (readMaybe)
 
 {-
 unimplemented:
@@ -281,7 +279,8 @@ data Cookie = Cookie
   } deriving Show
 
 strEncCookie :: EncCookie -> ByteString
-strEncCookie (EncCookie pid s iv e t) = cat [macPrefix, pid, s, b64 iv, b64 t, expStr e]
+strEncCookie (EncCookie pid s iv e t) = cat [macPrefix, pid, s, b64' iv, b64' t, expStr e]
+  where b64' = urlSafeBase64 . b64
 
 strCookie :: Cookie -> ByteString
 strCookie (Cookie a b c) = cat [a, b, c]
@@ -290,18 +289,16 @@ parseCookie :: ByteString -> Either String (EncCookie, Cookie)
 parseCookie ck = do
   when (length parts /= 8) $ Left "Incorrect number of sealed components"
   when (pfx /= macPrefix) $ Left "Wrong mac prefix"
-  eck <- EncCookie <$> pure a <*> pure b <*> B64.decode c <*> parseExp e <*> B64.decode d
+  eck <- EncCookie <$> pure a <*> pure b <*> b64' c <*> exp e <*> b64' d
   return (eck, Cookie enc f g)
   where
     parts = uncat ck
     (pfx:a:b:c:d:e:f:g:[]) = parts
     enc = cat $ take 6 parts
-    parseExp :: ByteString -> Either String (Maybe NominalDiffTime)
-    parseExp "" = Right Nothing
-    parseExp n = maybe (Left "Invalid expiration") (Right . toExp) (readMaybe $ S8.unpack n)
-    toExp :: Integer -> Maybe NominalDiffTime
-    toExp n | n > 0 = Just (fromInteger n)
-            | otherwise = Nothing
+    exp :: ByteString -> Either String (Maybe NominalDiffTime)
+    exp "" = Right Nothing
+    exp n = maybe (Left "Invalid expiration") (Right . Just) $ parseExpMsec n
+    b64' = b64urldec
 
 cat :: [ByteString] -> ByteString
 cat = BS.intercalate (S8.singleton '*')
