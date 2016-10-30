@@ -23,6 +23,7 @@ import           Data.ByteString           (ByteString)
 import qualified Data.ByteString           as BS
 import qualified Data.ByteString.Char8     as S8
 import qualified Data.ByteString.Lazy      as BL
+import           Data.Byteable             (constEqBytes)
 import           Data.CaseInsensitive      (CI (..))
 import           Data.Maybe                (catMaybes, fromMaybe)
 import           Data.Monoid               ((<>))
@@ -45,7 +46,7 @@ import           Network.Wai               (Request, rawPathInfo,
 import           Network.Hawk.Common
 import           Network.Hawk.Server.Types
 import           Network.Hawk.Util
-import           Network.Iron.Util         (fixedTimeEq, b64urldec)
+import           Network.Iron.Util         (b64urldec)
 
 -- | Bundle of parameters for 'authenticateRequest'. Provides
 -- information about what the public URL of the server would be. If
@@ -94,7 +95,7 @@ authenticateRequest opts creds req body = do
     else authenticate (saOpts opts) creds hreq
 
 authenticateBewit' opts (creds, t) req bewit
-  | mac `fixedTimeEq` (bewitMac bewit) = Right (AuthSuccess creds arts t)
+  | mac `constEqBytes` (bewitMac bewit) = Right (AuthSuccess creds arts t)
   | otherwise = Left (AuthFailUnauthorized "Bad mac" (Just creds) (Just arts))
   where
     arts = bewitArtifacts req bewit
@@ -209,7 +210,7 @@ authenticate' now opts (creds, t) hrq@HawkReq{..} sah@AuthorizationHeader{..} = 
   let arts = headerArtifacts hrq sah
   let doCheck = authResult creds arts t
   let mac = serverMac creds arts HawkHeader
-  if mac `fixedTimeEq` sahMac then do
+  if mac `constEqBytes` sahMac then do
     doCheck $ checkPayloadHash (scAlgorithm creds) sahHash hrqPayload
     doCheck $ checkNonce (saCheckNonce opts) (scKey creds) sahNonce sahTs
     doCheck $ checkExpiration now (saTimestampSkew opts) sahTs

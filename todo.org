@@ -5,19 +5,28 @@
   of currently missing items:
 
 ** Iron
-*** TODO Use the "Data.SecureMem" package for hash equality comparisons.
-*** TODO password lookup by ID.
+*** DONE Use the "Data.SecureMem" package for hash equality comparisons.
+    CLOSED: [2016-10-30 Sun 13:11]
+*** DONE password lookup by ID.
+    CLOSED: [2016-10-30 Sun 13:11]
 
 ** Hawk
 *** DONE WAI Middlewares
     CLOSED: [2016-10-28 Fri 17:21]
-*** TODO bewit generation
-*** TODO bewit authentication
+*** DONE bewit generation
+    CLOSED: [2016-10-30 Sun 12:00]
+*** DONE bewit authentication
+    CLOSED: [2016-10-30 Sun 12:00]
 
 ** Oz
 *** TODO A decent client API and ticket endpoints for Oz
 
 ** General
+*** docs upload command
+    #+BEGIN_SRC shell
+    rsync -avz dist/doc/html/hsoz rodney.id.au:/srv/www/rodney.id.au/docs
+    #+END_SRC
+
 *** TODO Test cases
 *** TODO Production testing in a real-world application
 *** TODO interop tests

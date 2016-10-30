@@ -29,6 +29,7 @@ import qualified Data.ByteString           as BS
 import qualified Data.ByteString.Base64    as B64
 import qualified Data.ByteString.Char8     as S8
 import qualified Data.ByteString.Lazy      as BL
+import           Data.Byteable             (constEqBytes)
 import           Data.CaseInsensitive      (CI (..))
 import qualified Data.Map                  as M
 import           Data.Maybe                (catMaybes, fromMaybe)
@@ -211,7 +212,7 @@ checkWwwAuthenticateHeader :: Credentials -> ByteString -> Either String POSIXTi
 checkWwwAuthenticateHeader creds w = do
   WwwAuthenticateHeader{..} <- parseWwwAuthenticateHeader w
   let tsm = calculateTsMac wahTs creds
-  if wahTsm `fixedTimeEq` tsm
+  if wahTsm `constEqBytes` tsm
     then Right wahTs
     else Left "Invalid server timestamp hash"
 
@@ -227,7 +228,7 @@ checkServerAuthorizationHeader _ _ ServerAuthorizationRequired _ Nothing = Left 
 checkServerAuthorizationHeader creds arts _ now (Just sa) = do
   sarh <- parseServerAuthorizationReplyHeader sa
   let mac = clientMac HawkResponse creds arts
-  if sarhMac sarh `fixedTimeEq` mac
+  if sarhMac sarh `constEqBytes` mac
     then Right (Just sarh)
     else Left "Bad response mac"
 
@@ -277,6 +278,7 @@ getBewit :: Credentials -> NominalDiffTime -> Maybe ByteString -> NominalDiffTim
          -> ByteString -> IO (Maybe ByteString)
 -- fixme: ext is a json value i think
 -- fixme: javascript version supports deconstructed parsed uri objects
+-- fixme: not much point having two time interval arguments?
 getBewit creds ttl ext offset uri = do
   exp <- fmap (+ (ttl + offset)) getPOSIXTime
   return $ bewit exp <$> splitUrl uri

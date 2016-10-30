@@ -7,7 +7,6 @@ module Network.Iron.Util
   , b64urldec
   , urlSafeBase64
   , unUrlSafeBase64
-  , fixedTimeEq
   , parseExpMsec
   ) where
 
@@ -48,14 +47,6 @@ unUrlSafeBase64 = pad . S8.map (tr '-' '+' . tr '_' '/')
   where
     tr a b c = if c == a then b else c
     pad s = s <> S8.replicate (S8.length s `mod` 4) '='
-
--- | Compare bytestrings in such a way that unequal bytestrings take
--- the same time to compare as equal bytestrings (assuming they have
--- the same length).
-fixedTimeEq :: ByteString -> ByteString -> Bool
--- fixme: actually test the timing
--- fixme: also use securemem ffi version
-fixedTimeEq a b = foldr (&&) True $ zipWith (==) (BS.unpack a) (BS.unpack b)
 
 -- | Reads a positive integer time value in milliseconds. This is for
 -- parsing ttls or expiry times written as milliseconds since the unix

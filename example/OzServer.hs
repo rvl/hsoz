@@ -127,7 +127,7 @@ needAuth req = case reverse (pathInfo req) of
 
 openTicket :: S8.ByteString -> IO (Either String OzTicket)
 openTicket = Iron.unseal (password sharedKey)
-  where password (Hawk.Key p) = Iron.Password p
+  where password (Hawk.Key p) = Iron.onePassword p
 
 -- | Example apps registry
 apps = [OzApp "app123" Nothing False sharedKey (Hawk.HawkAlgo Hawk.SHA256)]

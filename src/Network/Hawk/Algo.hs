@@ -22,8 +22,8 @@ import           Data.String             (IsString)
 import           GHC.Generics
 import           Network.Iron.Util       (b64)
 
--- fixme: decide whether this should be text or bytestring or
--- SecureMem, and whether it should be put into Iron.
+-- fixme: decide whether this should be bytestring or SecureMem, and
+-- whether it should be a typeclass.
 -- | A user-supplied password or generated key.
 newtype Key = Key ByteString deriving (Show, Generic, ByteArrayAccess, IsString)
 

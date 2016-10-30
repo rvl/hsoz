@@ -43,7 +43,7 @@ import           Network.Oz.Types
 rsvp :: MonadIO m => OzAppId -> Maybe OzGrantId -> Key -> TicketOpts -> m (Maybe ByteString)
 rsvp app grant (Key p) TicketOpts{..} = liftIO $ do
   now <- getPOSIXTime
-  Iron.sealWith ticketOptsIron (Iron.Password p) (envelope now)
+  Iron.sealWith ticketOptsIron (Iron.password p) (envelope now)
   where
     envelope now = OzTicket
                    { ozTicketExp = now + ticketOptsRsvpTtl
@@ -170,7 +170,7 @@ generateTicket opts@TicketOpts{..} (Key p) t = do
   key <- randomKey opts
   let Object ext = toJSON ticketOptsExt
   let sealed = OzSealedTicket t (Key key) ticketOptsHmacAlgorithm ext ""
-  mid <- Iron.sealWith ticketOptsIron (Iron.Password p) sealed
+  mid <- Iron.sealWith ticketOptsIron (Iron.password p) sealed
   return (finishSeal ticketOptsExt sealed <$> mid)
 
 -- | Removes the private ext part and adds the ticket ID.
@@ -181,4 +181,5 @@ finishSeal ext ticket ticketId = ticket { ozTicketId = decodeUtf8 ticketId
 
 -- | Decodes a Hawk "app" string into an Oz Ticket.
 parse :: TicketOpts -> Key -> ByteString -> IO (Either String OzSealedTicket)
-parse TicketOpts{..} (Key p) = Iron.unsealWith ticketOptsIron (Iron.Password p)
+parse TicketOpts{..} (Key p) = Iron.unsealWith ticketOptsIron lookup
+  where lookup = Iron.onePassword p

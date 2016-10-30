@@ -30,10 +30,11 @@ import           Data.Text              (Text)
 import           Data.Time.Clock        (NominalDiffTime)
 import           Data.Time.Clock.POSIX  (POSIXTime)
 import           GHC.Generics
+import           Data.Default           (Default(..))
 
 import           Network.Hawk           (HawkAlgo)
 import           Network.Hawk.Types
-import qualified Network.Iron           as Iron (Options, defaults)
+import qualified Network.Iron           as Iron (Options(..))
 
 -- | Identifies an Oz Application
 type OzAppId = Text
@@ -141,7 +142,16 @@ data OzTicket = OzTicket {
   } deriving (Show, Generic)
 
 
--- | Ticket generation options
+-- | Ticket generation options. The default values are:
+--
+--     * One hour ticket lifetime.
+--     * One minute RSVP lifetime.
+--     * Use the application permissions to delegate.
+--     * 'Network.Iron.defaults' Iron configuration.
+--     * 32 byte Hawk key length.
+--     * 'Crypto.Hash.Algorithms.SHA256' message authentication.
+--     * No ext data.
+
 data TicketOpts = TicketOpts
   { ticketOptsTicketTtl     :: NominalDiffTime -- ^ Ticket lifetime
   , ticketOptsRsvpTtl       :: NominalDiffTime -- ^ RSVP lifetime
@@ -160,17 +170,11 @@ data TicketOpts = TicketOpts
   , ticketOptsExt           :: OzExt
   }
 
--- | Default ticket generation options. These are:
---
---     * One hour ticket lifetime.
---     * One minute RSVP lifetime.
---     * Use the application permissions to delegate.
---     * 'Network.Iron.defaults' Iron configuration.
---     * 32 byte Hawk key length.
---     * SHA256 message authentication.
---     * No ext data.
 defaultTicketOpts :: TicketOpts
-defaultTicketOpts = TicketOpts 3600 60 True Iron.defaults 32 (HawkAlgo SHA256) mempty
+defaultTicketOpts = TicketOpts 3600 60 True def 32 (HawkAlgo SHA256) mempty
+
+instance Default TicketOpts where
+  def = defaultTicketOpts
 
 -- | User-supplied function to look up an Oz app definition by its
 -- identifier.

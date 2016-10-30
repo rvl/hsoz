@@ -20,6 +20,7 @@ import           Data.ByteString.Builder   (byteString, charUtf8,
                                             toLazyByteString)
 import qualified Data.ByteString.Char8     as S8
 import qualified Data.ByteString.Lazy      as BL
+import           Data.Byteable             (constEqBytes)
 import           Data.Char                 (toLower, toUpper)
 import           Data.List                 (intercalate)
 import           Data.Monoid               ((<>))
@@ -28,7 +29,6 @@ import           Network.HTTP.Types.Header (HeaderName)
 import           Network.HTTP.Types.Method (Method)
 
 import           Network.Hawk.Types
-import           Network.Iron.Util         (fixedTimeEq)
 
 data HawkType = HawkHeader | HawkBewit | HawkResponse
               deriving (Show, Eq)
@@ -56,7 +56,7 @@ escapeHeaderAttribute = id
 checkPayload :: HawkAlgoCls a => Maybe ByteString -> a -> ContentType -> BL.ByteString -> Either String ()
 checkPayload (Just hash) algo ct payload = if good then Right () else Left "Bad payload hash"
   where
-    good = hash `fixedTimeEq` (calculatePayloadHash algo payloadInfo)
+    good = hash `constEqBytes` (calculatePayloadHash algo payloadInfo)
     payloadInfo = PayloadInfo ct payload
 checkPayload Nothing algo ct payload = Left "Missing required payload hash"
 
