@@ -4,6 +4,7 @@ import           Control.Monad.IO.Class    (liftIO)
 import           Data.ByteString           (ByteString)
 import qualified Data.ByteString.Char8     as S8
 import qualified Data.ByteString.Lazy      as BL
+import qualified Data.ByteString.Lazy.Char8 as L8
 import qualified Data.Map                  as M
 import           Data.Monoid
 import           Data.Monoid
@@ -36,14 +37,11 @@ app req respond = do
       let payload = textPayload $ "Hello " <> user <> maybe "" (" " <>) ext
       let autho = Hawk.header creds artifacts (Just payload)
       responseLBS status200 [payloadCt payload, autho] (payloadData payload)
-    Left (Hawk.AuthFailBadRequest e _) -> responseLBS badRequest400 [] (lazyString e)
+    Left (Hawk.AuthFailBadRequest e _) -> responseLBS badRequest400 [] (L8.pack e)
     Left (Hawk.AuthFailUnauthorized _ _ _) -> responseLBS unauthorized401 [plain] "Shoosh!"
     Left (Hawk.AuthFailStaleTimeStamp e creds artifacts) -> do
       let autho = Hawk.header creds artifacts Nothing
-      responseLBS unauthorized401 [plain, autho] (lazyString e)
-
-lazyString :: String -> BL.ByteString
-lazyString = BL.fromStrict . S8.pack
+      responseLBS unauthorized401 [plain, autho] (L8.pack e)
 
 textPayload :: Text -> PayloadInfo
 textPayload = PayloadInfo (snd plain) . BL.fromStrict . encodeUtf8

@@ -6,6 +6,7 @@ module Network.Hawk.Util
        , authAttr
        , authAttrMaybe
        , readTs
+       , readTsMaybe
        ) where
 
 import           Control.Applicative              ((<|>))
@@ -66,11 +67,18 @@ val = q *> takeTill ((==) '"') <* q
       where q = char8 '"'
 
 readTs :: ByteString -> Either String POSIXTime
-readTs = toEither "Invalid timestamp" . readTs'
+readTs = toEither "Invalid timestamp" . readTsMaybe
   where
-    readTs' = fmap (fromInteger . toInteger . fst) . S8.readInt
     toEither _ (Just a) = Right a
     toEither e Nothing  = Left e
+
+-- | Hawk timestamps/bewit expirations are in seconds since the epoch,
+-- unlike iron ttls and expiry.
+readTsMaybe :: ByteString -> Maybe POSIXTime
+readTsMaybe = fmap fromInteger . (>>= check) . S8.readInteger
+  where
+    -- there should be no left-overs from integer parse
+    check (i, rest) = if S8.null rest then Just i else Nothing
 
 parseHostnamePort :: ByteString -> (ByteString, Maybe Int)
 parseHostnamePort hp = case parseOnly hostnamePort hp of

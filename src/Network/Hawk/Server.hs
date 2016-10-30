@@ -6,6 +6,7 @@
 module Network.Hawk.Server
        ( authenticateRequest
        , authenticate
+       , authenticateBewit
        , HawkReq(..)
        , header
        , defaultAuthReqOpts
@@ -26,21 +27,25 @@ import           Data.CaseInsensitive      (CI (..))
 import           Data.Maybe                (catMaybes, fromMaybe)
 import           Data.Monoid               ((<>))
 import           Data.Text                 (Text)
-import           Data.Text.Encoding        (decodeUtf8)
+import qualified Data.Text                 as T
+import           Data.Text.Encoding        (decodeUtf8, decodeUtf8')
+import           Control.Error.Safe        (rightMay)
+import           Data.Default              (Default(..))
 import           Data.Time.Clock           (NominalDiffTime)
 import           Data.Time.Clock.POSIX
 import           Network.HTTP.Types.Header (Header, hAuthorization,
                                             hContentType)
 import           Network.HTTP.Types.Method (Method, methodGet, methodPost)
+import           Network.HTTP.Types.URI    (renderQuery)
 import           Network.Wai               (Request, rawPathInfo,
-                                            rawQueryString, remoteHost,
-                                            requestHeaderHost, requestHeaders,
-                                            requestMethod)
+                                            rawQueryString, queryString,
+                                            remoteHost, requestMethod,
+                                            requestHeaderHost, requestHeaders)
 
 import           Network.Hawk.Common
 import           Network.Hawk.Server.Types
 import           Network.Hawk.Util
-import           Network.Iron.Util         (fixedTimeEq)
+import           Network.Iron.Util         (fixedTimeEq, b64urldec)
 
 -- | Bundle of parameters for 'authenticateRequest'. Provides
 -- information about what the public URL of the server would be. If
@@ -51,6 +56,7 @@ data AuthReqOpts = AuthReqOpts
   { saHostHeaderName :: Maybe (CI ByteString) -- ^ Alternate name for @Host@ header
   , saHost           :: Maybe ByteString -- ^ Overrides the URL host
   , saPort           :: Maybe ByteString -- ^ Overrides the URL port
+  , saBewitParam     :: ByteString -- ^ Query parameter for bewit authentication
   , saOpts           :: AuthOpts  -- ^ Parameters for 'authenticate'
   }
 
@@ -61,23 +67,87 @@ data AuthOpts = AuthOpts
   , saIronLocaltimeOffset :: NominalDiffTime -- fixme: check this is still needed
   }
 
--- | Default parameters for 'authenticateRequest'. These are:
---
---
-defaultAuthReqOpts = AuthReqOpts Nothing Nothing Nothing defaultAuthOpts
+-- | Default parameters for 'authenticateRequest'.
+defaultAuthReqOpts = AuthReqOpts Nothing Nothing Nothing "bewit" defaultAuthOpts
 
 defaultAuthOpts = AuthOpts (\x t n -> True) 60 0
+
+instance Default AuthReqOpts where
+  def = defaultAuthReqOpts
+
+instance Default AuthOpts where
+  def = defaultAuthOpts
 
 -- | Checks the @Authorization@ header of a 'Network.Wai.Request' and
 -- (optionally) a payload. The header will be parsed and verified with
 -- the credentials supplied.
+--
+-- If the request payload is provided, it will be verified. If a
+-- payload is not supplied, it can be verified later with
+-- 'authenticatePayload'.
 authenticateRequest :: MonadIO m => AuthReqOpts -> CredentialsFunc m t
-                             -> Request -> Maybe BL.ByteString -> m (AuthResult t)
+                    -> Request -> Maybe BL.ByteString -> m (AuthResult t)
 authenticateRequest opts creds req body = do
   let hreq = hawkReq opts req body
   if BS.null (hrqAuthorization hreq)
     then return $ Left (AuthFailBadRequest "Missing Authorization header" Nothing)
     else authenticate (saOpts opts) creds hreq
+
+authenticateBewit' opts (creds, t) req bewit
+  | mac `fixedTimeEq` (bewitMac bewit) = Right (AuthSuccess creds arts t)
+  | otherwise = Left (AuthFailUnauthorized "Bad mac" (Just creds) (Just arts))
+  where
+    arts = bewitArtifacts req bewit
+    mac = serverMac creds arts HawkBewit
+
+bewitArtifacts :: HawkReq -> Bewit -> HeaderArtifacts
+bewitArtifacts HawkReq{..} Bewit{..} =
+  HeaderArtifacts hrqMethod hrqHost hrqPort hrqBewitlessUrl
+    "" bewitExp "" "" Nothing (Just bewitExt) Nothing Nothing
+
+authenticateBewit :: MonadIO m => AuthReqOpts -> CredentialsFunc m t
+                  -> Request -> m (AuthResult t)
+authenticateBewit opts getCreds req = do
+  now <- liftIO getPOSIXTime
+  case checkBewit hrq now of
+    Right bewit -> do
+      mcreds <- mapLeft unauthorized <$> getCreds (bewitId bewit)
+      return $ case mcreds of
+        Right creds -> authenticateBewit' opts creds hrq bewit
+        Left e -> undefined
+    Left e -> return (Left e)
+
+  where
+    hrq = hawkReq opts req Nothing
+    checkBewit :: HawkReq -> POSIXTime -> Either AuthFail Bewit
+    checkBewit HawkReq{..} now = do
+      encBewit <- checkEmpty hrqBewit
+      checkMethod hrqMethod
+      checkHeader hrqAuthorization
+      bewit <- mapLeft unauthorized $ decodeBewit encBewit
+      checkAttrs bewit
+      checkExpiry bewit now
+      return bewit
+
+    -- need a bewit in the query string
+    checkEmpty (Just "") = Left (unauthorized "Empty bewit")
+    checkEmpty Nothing   = Left (unauthorized "")
+    checkEmpty (Just b)  = Right b
+    -- bewit is not intended for PUT, POST, DELETE, etc
+    checkMethod m = if m == "GET" || m == "HEAD" then Right ()
+                    else Left (unauthorized "Invalid method")
+    -- client should use either holder-of-key or bewit, not both
+    checkHeader h = if BS.null h then Right ()
+                    else Left (badRequest "Multiple authentications")
+    -- disallow empty attributes
+    checkAttrs (Bewit i _ m _) = if T.null i || BS.null m
+                                 then Left (badRequest "Missing bewit attributes")
+                                 else Right ()
+    checkExpiry b now = if now < bewitExp b then Right ()
+                        else Left (AuthFailUnauthorized ("Access expired " ++ show (bewitExp b)) Nothing Nothing) -- fixme: include hrqBewit
+    unauthorized e = AuthFailUnauthorized e Nothing Nothing
+    badRequest e = AuthFailBadRequest e Nothing
+
 
 -- | A package of values containing the attributes of a HTTP request
 -- which are relevant to Hawk authentication.
@@ -88,33 +158,41 @@ data HawkReq = HawkReq
   , hrqPort          :: Maybe Int
   , hrqAuthorization :: ByteString
   , hrqPayload       :: Maybe PayloadInfo
+  , hrqBewit         :: Maybe ByteString
+  , hrqBewitlessUrl  :: ByteString
   } deriving Show
 
 hawkReq :: AuthReqOpts -> Request -> Maybe BL.ByteString -> HawkReq
-hawkReq AuthReqOpts{..} req body = HawkReq { hrqMethod = requestMethod req
-                           , hrqUrl = rawPathInfo req <> rawQueryString req -- fixme: path /= url
-                           , hrqHost = fromMaybe "" (saHost <|> host)
-                           , hrqPort = port
-                           , hrqAuthorization = fromMaybe "" $ lookup hAuthorization $ requestHeaders req
-                           , hrqPayload = PayloadInfo ct <$> body -- if provided, the payload hash will be checked
-                           }
+hawkReq AuthReqOpts{..} req body = HawkReq
+  { hrqMethod = requestMethod req
+  , hrqUrl = baseUrl <> rawQueryString req
+  , hrqHost = justString (saHost <|> host)
+  , hrqPort = port
+  , hrqAuthorization = justString $ lookup hAuthorization $ requestHeaders req
+  , hrqPayload = PayloadInfo ct <$> body -- if provided, the payload hash will be checked
+  , hrqBewit = fmap justString <$> lookup saBewitParam $ queryString req
+  , hrqBewitlessUrl = baseUrl <> bewitQueryString
+  }
   where
+    baseUrl = rawPathInfo req  -- fixme: path /= url
     hostHdr = maybe (requestHeaderHost req) (flip lookup (requestHeaders req)) saHostHeaderName
     (host, port) = case parseHostnamePort <$> hostHdr of
       Nothing             -> (Nothing, Nothing)
       (Just ("", p))      -> (Nothing, p)
       (Just (h, Just p))  -> (Just h, Just p)
       (Just (h, Nothing)) -> (Just h, Nothing)
-    ct = fromMaybe "" $ lookup hContentType $ requestHeaders req
-
+    ct = justString $ lookup hContentType $ requestHeaders req
+    justString = fromMaybe ""
+    bewitQueryString = renderQuery True $ removeBewit (queryString req)
+    removeBewit = filter ((/= saBewitParam) . fst)
 
 -- | Checks the @Authorization@ header of a generic request. The
 -- header will be parsed and verified with the credentials
--- supplied. If a payload is provided, it will be verified.
+-- supplied.
+--
+-- If a payload is provided, it will be verified. If the payload is
+-- not supplied, it can be verified later with 'authenticatePayload'.
 authenticate :: MonadIO m => AuthOpts -> CredentialsFunc m t -> HawkReq -> m (AuthResult t)
--- fixme: payload hash is included in result. Need a function which
--- can be used to verify payload later if it's not immediately
--- available.
 authenticate opts getCreds req@HawkReq{..} = do
   now <- liftIO getPOSIXTime
   case parseServerAuthorizationHeader hrqAuthorization of
@@ -128,9 +206,6 @@ authenticate opts getCreds req@HawkReq{..} = do
 authenticate' :: POSIXTime -> AuthOpts -> (Credentials, t)
               -> HawkReq -> AuthorizationHeader -> AuthResult t
 authenticate' now opts (creds, t) hrq@HawkReq{..} sah@AuthorizationHeader{..} = do
-  -- fixme: check !credentials => empty credentials
-  -- fixme: check !credentials.key || !credentials.algorithm => invalid credentials
-  -- fixme: check credentials.algorithm? => unknown algorithm
   let arts = headerArtifacts hrq sah
   let doCheck = authResult creds arts t
   let mac = serverMac creds arts HawkHeader
@@ -147,10 +222,18 @@ authResult :: Credentials -> HeaderArtifacts -> t
 authResult c a t (Right _) = Right (AuthSuccess c a t)
 authResult c a _ (Left e)  = Left (AuthFailUnauthorized e (Just c) (Just a))
 
+-- | Constructs artifacts bundle out of the request.
 headerArtifacts :: HawkReq -> AuthorizationHeader -> HeaderArtifacts
 headerArtifacts HawkReq{..} AuthorizationHeader{..} =
   HeaderArtifacts hrqMethod hrqHost hrqPort hrqUrl
     sahId sahTs sahNonce sahMac sahHash sahExt (fmap decodeUtf8 sahApp) sahDlg
+
+-- | Verifies the payload hash as a separate step after other things
+-- have been check. This is useful when the request body is streamed
+-- for example.
+authenticatePayload :: AuthSuccess t -> PayloadInfo -> Either String ()
+authenticatePayload (AuthSuccess c a _) p =
+  checkPayloadHash (scAlgorithm c) (shaHash a) (Just p)
 
 
 -- | Generates a suitable @Server-Authorization@ header to send back
@@ -225,5 +308,39 @@ serverAuthHeader m = do
   return $ AuthorizationHeader id ts nonce mac
     (authAttrMaybe m "hash") (authAttrMaybe m "ext")
     (authAttrMaybe m "app") (authAttrMaybe m "dlg")
+
+----------------------------------------------------------------------------
+-- Bewit parsing
+
+data Bewit = Bewit
+             { bewitId  :: Text
+             , bewitExp :: POSIXTime
+             , bewitMac :: ByteString
+             , bewitExt :: ByteString
+             } deriving Show
+
+-- | Parses an bewit query string value in the format
+-- @id\exp\mac\ext@. The delimiter @'\'@ is used as because it is a
+-- reserved header attribute character.
+decodeBewit :: ByteString -> Either String Bewit
+decodeBewit s = decode s >>= fourParts >>= bewit
+  where
+    decode = fmap (S8.split '\\') . fixMsg . b64urldec
+    fourParts [a, b, c, d] = Right (a, b, c, d)
+    fourParts _            = Left "Invalid bewit structure"
+    bewit = justRight "Invalid bewit structure" . bewit'
+    bewit' (id, exp, mac, ext) = Bewit <$> decodeId id
+                                 <*> readTsMaybe exp
+                                 <*> pure mac <*> pure ext
+    fixMsg = mapLeft (const "Invalid bewit encoding")
+    decodeId = rightMay . decodeUtf8'
+
+justRight :: e -> Maybe a -> Either e a
+justRight _ (Just a) = Right a
+justRight e Nothing = Left e
+
+mapLeft :: (e -> e') -> Either e a -> Either e' a
+mapLeft f (Left e) = Left (f e)
+mapLeft _ (Right a) = Right a
 
 ----------------------------------------------------------------------------

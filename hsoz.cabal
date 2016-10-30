@@ -80,7 +80,9 @@ library
                      , Network.Hawk.Types
                      , Network.Hawk.Server
                      , Network.Hawk.Server.Types
+                     , Network.Hawk.Middleware
                      , Network.Hawk.Client
+                     , Network.Hawk.URI
                      , Network.Oz
                      , Network.Oz.Application
                      , Network.Oz.Client
@@ -103,6 +105,9 @@ library
                      , case-insensitive
                      , containers
                      , cryptonite
+                     , data-default
+                     , either
+                     , errors
                      , http-client
                      , http-types
                      , lens
@@ -116,6 +121,7 @@ library
                      , time
                      , transformers
                      , uri-bytestring
+                     , vault
                      , wai
                      , warp
                      , wreq
@@ -128,6 +134,8 @@ executable hsoz-example
   other-modules:       Common
                      , HawkServer
                      , HawkClient
+                     , BewitServer
+                     , BewitClient
                      , OzServer
                      , OzClient
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
@@ -138,6 +146,7 @@ executable hsoz-example
                      , case-insensitive
                      , containers
                      , cryptonite
+                     , data-default
                      , http-client
                      , http-types
                      , lens

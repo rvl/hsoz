@@ -8,6 +8,7 @@
 module Network.Hawk.Client
        ( header
        , headerOz
+       , getBewit
        , authenticate
        , ServerAuthorizationCheck(..)
        , Credentials(..)
@@ -30,7 +31,7 @@ import qualified Data.ByteString.Char8     as S8
 import qualified Data.ByteString.Lazy      as BL
 import           Data.CaseInsensitive      (CI (..))
 import qualified Data.Map                  as M
-import           Data.Maybe                (catMaybes)
+import           Data.Maybe                (catMaybes, fromMaybe)
 import           Data.Text                 (Text)
 import qualified Data.Text                 as T
 import           Data.Text.Encoding        (encodeUtf8)
@@ -120,15 +121,15 @@ clientHawkAuth creds arts@HeaderArtifacts{..} = hawkHeaderString (hawkHeaderItem
             , ("nonce", Just chaNonce)
             , ("hash", chaHash)
             , ("ext", chaExt)
-            , ("mac", Just $ clientMac creds arts HawkHeader)
+            , ("mac", Just $ clientMac HawkHeader creds arts)
             , ("app", encodeUtf8 <$> chaApp)
             , ("dlg", encodeUtf8 <$> chaDlg)
             ]
 
-clientMac :: Credentials -> HeaderArtifacts -> HawkType -> ByteString
-clientMac Credentials{..} HeaderArtifacts{..} =
+clientMac :: HawkType -> Credentials -> HeaderArtifacts -> ByteString
+clientMac h Credentials{..} HeaderArtifacts{..} =
   calculateMac ccAlgorithm ccKey
-      chaTimestamp chaNonce chaMethod chaResource chaHost chaPort
+      chaTimestamp chaNonce chaMethod chaResource chaHost chaPort h
 
 hawkHeaderItems :: [(ByteString, Maybe ByteString)] -> [(ByteString, ByteString)]
 hawkHeaderItems = catMaybes . map pull
@@ -225,7 +226,7 @@ checkServerAuthorizationHeader _ _ ServerAuthorizationNotRequired _ Nothing = Ri
 checkServerAuthorizationHeader _ _ ServerAuthorizationRequired _ Nothing = Left "Missing Server-Authorization header"
 checkServerAuthorizationHeader creds arts _ now (Just sa) = do
   sarh <- parseServerAuthorizationReplyHeader sa
-  let mac = clientMac creds arts HawkResponse
+  let mac = clientMac HawkResponse creds arts
   if sarhMac sarh `fixedTimeEq` mac
     then Right (Just sarh)
     else Left "Bad response mac"
@@ -270,3 +271,21 @@ serverAuthReplyHeader m = do
   let hash = authAttrMaybe m "hash"
   let ext = authAttrMaybe m "ext"
   return $ ServerAuthorizationReplyHeader mac hash ext
+
+-- | Generate a bewit value for a given URI.
+getBewit :: Credentials -> NominalDiffTime -> Maybe ByteString -> NominalDiffTime
+         -> ByteString -> IO (Maybe ByteString)
+-- fixme: ext is a json value i think
+-- fixme: javascript version supports deconstructed parsed uri objects
+getBewit creds ttl ext offset uri = do
+  exp <- fmap (+ (ttl + offset)) getPOSIXTime
+  return $ bewit exp <$> splitUrl uri
+  where
+    bewit exp = encode . clientMac HawkBewit creds . make
+      where
+        make (SplitURL host port resource) =
+          HeaderArtifacts exp "" "GET" host port resource Nothing ext Nothing Nothing
+        encode = b64url . S8.intercalate "\\" . parts
+        parts mac = [ encodeUtf8 . ccId $ creds
+                    , S8.pack . show . round $ exp
+                    , mac, fromMaybe "" ext ]

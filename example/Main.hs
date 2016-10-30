@@ -1,9 +1,12 @@
 module Main where
 
-import           System.Environment (getArgs, getProgName)
+import Data.List (intercalate)
+import System.Environment (getArgs, getProgName)
 
 import qualified HawkClient         as Hawk
 import qualified HawkServer         as Hawk
+import qualified BewitClient        as Bewit
+import qualified BewitServer        as Bewit
 import qualified OzClient           as Oz
 import qualified OzServer           as Oz
 
@@ -20,11 +23,17 @@ main = do
       _ -> usage prog
 
 dispatch :: String -> Maybe (IO ())
-dispatch "hawk-server" = Just Hawk.serverMain
-dispatch "hawk-client" = Just Hawk.clientMain
-dispatch "oz-server"   = Just Oz.serverMain
-dispatch "oz-client"   = Just Oz.clientMain
-dispatch _             = Nothing
+dispatch "hawk-server"  = Just Hawk.serverMain
+dispatch "hawk-client"  = Just Hawk.clientMain
+dispatch "bewit-server" = Just Bewit.serverMain
+dispatch "bewit-client" = Just Bewit.clientMain
+dispatch "oz-server"    = Just Oz.serverMain
+dispatch "oz-client"    = Just Oz.clientMain
+dispatch _              = Nothing
 
 usage :: String -> IO ()
-usage prog = putStrLn $ "Usage: " ++ prog ++ " [ hawk-server | hawk-client | oz-server | oz-client ]"
+usage prog = putStrLn $ "Usage: " ++ prog ++ " [ " ++ progs ++ " ]"
+  where
+    progs = intercalate " | " [ p ++ "-" ++ c | p <- ps, c <- cs]
+    ps = ["hawk", "bewit", "oz"]
+    cs = ["client", "server"]
