@@ -60,10 +60,9 @@ checkPayload (Just hash) algo ct payload = if good then Right () else Left "Bad 
     payloadInfo = PayloadInfo ct payload
 checkPayload Nothing algo ct payload = Left "Missing required payload hash"
 
-
 checkPayloadHashMaybe :: HawkAlgoCls a => a -> Maybe ByteString -> Maybe PayloadInfo -> Maybe Bool
-checkPayloadHashMaybe _ Nothing _ = Just True
-checkPayloadHashMaybe _ (Just _) Nothing = Nothing
+checkPayloadHashMaybe _    _           Nothing        = Just True
+checkPayloadHashMaybe _    Nothing     (Just _)       = Nothing
 checkPayloadHashMaybe algo (Just hash) (Just payload) = Just (hash == calculatePayloadHash algo payload)
 
 checkPayloadHash :: HawkAlgoCls a => a -> Maybe ByteString -> Maybe PayloadInfo -> Either String ()

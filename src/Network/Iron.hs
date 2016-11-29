@@ -243,6 +243,9 @@ validId :: PasswordId -> Bool
 validId k = not (S8.null k) && S8.all inRange k
   where inRange c = isAscii c && isAlphaNum c || c == '_'
 
+passwordValid :: Byteable a => EncryptionOpts -> a -> Bool
+passwordValid EncryptionOpts{..} sec = keySize ieAlgorithm <= byteableLength sec
+
 password' :: ToSecureMem a => PasswordId -> a -> a -> Password
 password' k e i = MkPassword k (passwd e) (passwd i)
   where passwd = Password . toSecureMem
@@ -396,9 +399,6 @@ hmacWithPassword :: IntegrityOpts -> KeyPass -> ByteString -> ByteString
 hmacWithPassword IntegrityOpts{..} key salt text = do
   key' <- generateKey iiIterations (macKeySize iiAlgorithm) salt key
   Right $ macWithKey iiAlgorithm key' text
-
-passwordValid :: EncryptionOpts -> ByteString -> Bool
-passwordValid EncryptionOpts{..} sec = keySize ieAlgorithm < BS.length sec
 
 -- | Prepares the variables necessary to use cryptonite block cipher
 -- functions.

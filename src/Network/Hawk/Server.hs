@@ -7,6 +7,7 @@ module Network.Hawk.Server
        ( authenticateRequest
        , authenticate
        , authenticateBewit
+       , authenticatePayload
        , HawkReq(..)
        , header
        , defaultAuthReqOpts
@@ -149,19 +150,6 @@ authenticateBewit opts getCreds req = do
     unauthorized e = AuthFailUnauthorized e Nothing Nothing
     badRequest e = AuthFailBadRequest e Nothing
 
-
--- | A package of values containing the attributes of a HTTP request
--- which are relevant to Hawk authentication.
-data HawkReq = HawkReq
-  { hrqMethod        :: Method
-  , hrqUrl           :: ByteString
-  , hrqHost          :: ByteString
-  , hrqPort          :: Maybe Int
-  , hrqAuthorization :: ByteString
-  , hrqPayload       :: Maybe PayloadInfo
-  , hrqBewit         :: Maybe ByteString
-  , hrqBewitlessUrl  :: ByteString
-  } deriving Show
 
 hawkReq :: AuthReqOpts -> Request -> Maybe BL.ByteString -> HawkReq
 hawkReq AuthReqOpts{..} req body = HawkReq

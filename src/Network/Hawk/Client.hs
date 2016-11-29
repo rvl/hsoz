@@ -82,7 +82,12 @@ data Header = Header
   } deriving (Show, Generic)
 
 -- | Generates the Hawk authentication header for a request.
-header :: Text -> Method -> Credentials -> Maybe PayloadInfo -> Maybe Text -> IO Header
+header :: Text -- ^ The request URL
+       -> Method -- ^ The request method
+       -> Credentials -- ^ Credentials used to generate the header
+       -> Maybe PayloadInfo -- ^ Optional request payload
+       -> Maybe Text -- ^ @ext@ data
+       -> IO Header
 header url method creds payload ext = headerBase url method creds payload ext Nothing Nothing
 
 -- | Generates the Hawk authentication header for an Oz request. Oz
