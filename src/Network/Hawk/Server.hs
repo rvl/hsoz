@@ -46,7 +46,7 @@ import           Network.Wai               (Request, rawPathInfo,
 import           Network.Hawk.Common
 import           Network.Hawk.Server.Types
 import           Network.Hawk.Util
-import           Network.Iron.Util         (b64urldec)
+import           Network.Iron.Util         (b64urldec, justRight, mapLeft)
 
 -- | Bundle of parameters for 'authenticateRequest'. Provides
 -- information about what the public URL of the server would be. If
@@ -335,13 +335,5 @@ decodeBewit s = decode s >>= fourParts >>= bewit
                                  <*> pure mac <*> pure ext
     fixMsg = mapLeft (const "Invalid bewit encoding")
     decodeId = rightMay . decodeUtf8'
-
-justRight :: e -> Maybe a -> Either e a
-justRight _ (Just a) = Right a
-justRight e Nothing = Left e
-
-mapLeft :: (e -> e') -> Either e a -> Either e' a
-mapLeft f (Left e) = Left (f e)
-mapLeft _ (Right a) = Right a
 
 ----------------------------------------------------------------------------

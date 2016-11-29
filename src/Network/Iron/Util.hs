@@ -1,13 +1,19 @@
 -- | Miscellaneous shortcut functions, mostly for internal use.
 
-module Network.Iron.Util
-  ( b64
+module Network.Iron.Util (
+  -- * Base64
+    b64
   , b64dec
   , b64url
   , b64urldec
   , urlSafeBase64
   , unUrlSafeBase64
+  -- * Time parsing
   , parseExpMsec
+  -- * Error handling
+  , justRight
+  , rightJust
+  , mapLeft
   ) where
 
 import           Crypto.Hash
@@ -58,3 +64,19 @@ parseExpMsec = (>>= fromMsec . guard) . readMaybe . S8.unpack
     -- ttls must be positive
     guard n | n > 0 = Just n
             | otherwise = Nothing
+
+
+-- | Converts 'Either' to 'Maybe'.
+rightJust :: Either e a -> Maybe a
+rightJust (Right a) = Just a
+rightJust _ = Nothing
+
+-- | Converts 'Maybe' to 'Either'.
+justRight :: e -> Maybe a -> Either e a
+justRight _ (Just a) = Right a
+justRight e Nothing = Left e
+
+-- | Modifies the left branch of an 'Either'.
+mapLeft :: (e -> e') -> Either e a -> Either e' a
+mapLeft f (Left e) = Left (f e)
+mapLeft _ (Right a) = Right a
