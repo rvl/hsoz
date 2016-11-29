@@ -107,6 +107,9 @@ bewitArtifacts HawkReq{..} Bewit{..} =
   HeaderArtifacts hrqMethod hrqHost hrqPort hrqBewitlessUrl
     "" bewitExp "" "" Nothing (Just bewitExt) Nothing Nothing
 
+-- | Checks the @Authorization@ header of a request according to the
+-- "bewit" scheme. See "Network.Hawk.URI" for a description of that
+-- scheme.
 authenticateBewit :: MonadIO m => AuthReqOpts -> CredentialsFunc m t
                   -> Request -> m (AuthResult t)
 authenticateBewit opts getCreds req = do

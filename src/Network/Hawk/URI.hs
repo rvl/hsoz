@@ -3,8 +3,8 @@
 -- There are cases in which limited and short-term access to a
 -- protected resource is granted to a third party which does not have
 -- access to the shared credentials. For example, displaying a
--- protected image on a web page accessed by anyone. **Hawk** provides
--- limited support for such URIs in the form of a /bewit/ - a URI
+-- protected image on a web page accessed by anyone. __Hawk__ provides
+-- limited support for such URIs in the form of a /bewit/ — a URI
 -- query parameter appended to the request URI which contains the
 -- necessary credentials to authenticate the request.
 --
@@ -20,7 +20,7 @@
 -- the granted access timeframe.
 --
 -- This module collects the URI authorization functions in a single
--- module, to mirror the Hawk.uri module of the javascript
+-- module, to mirror the @Hawk.uri@ module of the javascript
 -- implementation.
 
 module Network.Hawk.URI
@@ -37,8 +37,10 @@ import Network.Hawk.Server (authenticateBewit, CredentialsFunc, AuthReqOpts, Aut
 import Network.Hawk.Middleware (bewitAuth)
 import Network.Hawk.Client (getBewit)
 
+-- | See 'Network.Hawk.Server.authenticateBewit'.
 authenticate :: MonadIO m => AuthReqOpts -> CredentialsFunc m t
              -> Request -> m (AuthResult t)
 authenticate = authenticateBewit
 
+-- | See 'Network.Hawk.Middleware.bewitAuth'.
 middleware = bewitAuth
