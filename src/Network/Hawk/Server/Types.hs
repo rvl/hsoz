@@ -75,12 +75,11 @@ data HeaderArtifacts = HeaderArtifacts
   , shaHost      :: ByteString
   , shaPort      :: Maybe Int
   , shaResource  :: ByteString
-  --, shaHeader  :: ServerAuthorizationHeader
   , shaId        :: ClientId
   , shaTimestamp :: POSIXTime
   , shaNonce     :: ByteString
-  , shaMac       :: ByteString
-  , shaHash      :: Maybe ByteString
+  , shaMac       :: ByteString -- ^ Entire header hash
+  , shaHash      :: Maybe ByteString -- ^ Payload hash
   , shaExt       :: Maybe ByteString
   , shaApp       :: Maybe Text
   , shaDlg       :: Maybe ByteString

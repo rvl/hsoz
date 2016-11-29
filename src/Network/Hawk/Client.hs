@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE RecordWildCards           #-}
 
@@ -18,7 +17,6 @@ module Network.Hawk.Client
        , module Network.Hawk.Types
        ) where
 
-import           Control.Monad             (join)
 import           Control.Monad.IO.Class    (MonadIO, liftIO)
 import           Crypto.Hash
 import           Crypto.Random
@@ -37,7 +35,6 @@ import qualified Data.Text                 as T
 import           Data.Text.Encoding        (encodeUtf8)
 import           Data.Time.Clock           (NominalDiffTime)
 import           Data.Time.Clock.POSIX
-import           GHC.Generics
 import           Network.HTTP.Types.Header (hContentType, hWWWAuthenticate, HeaderName)
 import           Network.HTTP.Types.Method (Method)
 import           Network.HTTP.Types.URI    (extractPath)
@@ -51,35 +48,8 @@ import           Network.Hawk.Common
 import           Network.Hawk.Types
 import           Network.Hawk.Util
 import           Network.Iron.Util
-
--- | ID and key used for encrypting Hawk @Authorization@ header.
-data Credentials = Credentials
-  { ccId        :: ClientId
-  , ccKey       :: Key
-  , ccAlgorithm :: HawkAlgo
-  } deriving (Show, Generic)
-
--- | Struct for attributes which will be encoded in the Hawk
--- @Authorization@ header. The term "artifacts" comes from the
--- original Javascript implementation of Hawk.
-data HeaderArtifacts = HeaderArtifacts
-  { chaTimestamp :: POSIXTime
-  , chaNonce     :: ByteString
-  , chaMethod    :: Method
-  , chaHost      :: ByteString
-  , chaPort      :: Maybe Int
-  , chaResource  :: ByteString
-  , chaHash      :: Maybe ByteString
-  , chaExt       :: Maybe ByteString -- fixme: this should be json value
-  , chaApp       :: Maybe Text -- ^ app id, for oz
-  , chaDlg       :: Maybe Text -- ^ delegated-by app id, for oz
-  } deriving Show
-
--- | The result of Hawk header generation.
-data Header = Header
-  { hdrField     :: Authorization  -- ^ Value of @Authorization@ header.
-  , hdrArtifacts :: HeaderArtifacts  -- ^ Not sure if this is needed by users.
-  } deriving (Show, Generic)
+import           Network.Hawk.Client.Types
+import           Network.Hawk.Client.HeaderParser
 
 -- | Generates the Hawk authentication header for a request.
 header :: Text -- ^ The request URL
@@ -142,12 +112,6 @@ hawkHeaderItems = catMaybes . map pull
     pull (k, Just v)  = Just (k, v)
     pull (k, Nothing) = Nothing
 
-data SplitURL = SplitURL
-  { urlHost :: ByteString
-  , urlPort :: Maybe Int
-  , urlPath :: ByteString
-  } deriving (Show, Generic)
-
 splitUrl :: ByteString -> Maybe SplitURL
 splitUrl url = SplitURL <$> host <*> pure port <*> path
   where
@@ -169,16 +133,16 @@ data ServerAuthorizationCheck = ServerAuthorizationNotRequired
                               deriving Show
 
 -- | Validates the server response.
-authenticate :: Response BL.ByteString -> Credentials -> HeaderArtifacts
-                      -> Maybe BL.ByteString -> ServerAuthorizationCheck
-                      -> IO (Either String ())
+authenticate :: Response body -> Credentials -> HeaderArtifacts
+             -> Maybe BL.ByteString -> ServerAuthorizationCheck
+             -> IO (Either String ())
 authenticate r creds artifacts payload saCheck = do
   now <- getPOSIXTime
   return $ clientAuthenticate' r creds artifacts payload saCheck now
 
-clientAuthenticate' :: Response BL.ByteString -> Credentials -> HeaderArtifacts
-                       -> Maybe BL.ByteString -> ServerAuthorizationCheck
-                       -> POSIXTime -> Either String ()
+clientAuthenticate' :: Response body -> Credentials -> HeaderArtifacts
+                    -> Maybe BL.ByteString -> ServerAuthorizationCheck
+                    -> POSIXTime -> Either String ()
 clientAuthenticate' r creds artifacts payload saCheck now = do
   let w = responseHeader hWWWAuthenticate r
   ts <- mapM (checkWwwAuthenticateHeader creds) w
@@ -241,45 +205,6 @@ checkServerAuthorizationHeader creds arts _ now (Just sa) = do
     else Left "Bad response mac"
 
 ----------------------------------------------------------------------------
-
--- | Represents the `WWW-Authenticate` header which the server uses to
--- respond when the client isn't authenticated.
-data WwwAuthenticateHeader = WwwAuthenticateHeader
-                             { wahTs    :: POSIXTime  -- ^ server's timestamp
-                             , wahTsm   :: ByteString -- ^ timestamp mac
-                             , wahError :: ByteString
-                             } deriving Show
-
--- | Represents the `Server-Authorization` header which the server
--- sends back to the client.
-data ServerAuthorizationReplyHeader = ServerAuthorizationReplyHeader
-                                      { sarhMac  :: ByteString
-                                      , sarhHash :: Maybe ByteString -- ^ optional payload hash
-                                      , sarhExt  :: Maybe ByteString
-                                      } deriving Show
-
-parseWwwAuthenticateHeader :: ByteString -> Either String WwwAuthenticateHeader
-parseWwwAuthenticateHeader = fmap snd . parseHeader wwwKeys wwwAuthHeader
-
-parseServerAuthorizationReplyHeader :: ByteString -> Either String ServerAuthorizationReplyHeader
-parseServerAuthorizationReplyHeader = fmap snd . parseHeader serverKeys serverAuthReplyHeader
-
-wwwKeys = ["tsm", "ts", "error"]
-serverKeys = ["mac", "ext", "hash"]
-
-wwwAuthHeader :: AuthAttrs -> Either String WwwAuthenticateHeader
-wwwAuthHeader m = do
-  credTs <- join (readTs <$> authAttr m "ts")
-  credTsm <- authAttr m "tsm"
-  credError <- authAttr m "error"
-  return $ WwwAuthenticateHeader credTs credTsm credError
-
-serverAuthReplyHeader :: AuthAttrs -> Either String ServerAuthorizationReplyHeader
-serverAuthReplyHeader m = do
-  mac <- authAttr m "mac"
-  let hash = authAttrMaybe m "hash"
-  let ext = authAttrMaybe m "ext"
-  return $ ServerAuthorizationReplyHeader mac hash ext
 
 -- | Generate a bewit value for a given URI.
 getBewit :: Credentials -> NominalDiffTime -> Maybe ByteString -> NominalDiffTime
