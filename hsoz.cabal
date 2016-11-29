@@ -148,17 +148,32 @@ executable hsoz-example
   default-language:    Haskell2010
   default-extensions:  OverloadedStrings
   if impl(ghcjs)
+    -- this is just because of wreq pulling in unbuildable deps
     buildable:         False
 
 test-suite hsoz-test
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test
-  main-is:             Spec.hs
+  main-is:             Main.hs
+  other-modules:       Spec
+                     , Network.Iron.Tests
+                     , Network.Hawk.Tests
+                     , Network.Oz.Tests
   build-depends:       base
                      , hsoz
+                     , QuickCheck
+                     , HUnit
+                     , tasty
+                     , tasty-hunit
+                     , tasty-quickcheck
+                     , tasty-golden
+                     , bytestring
+                     , aeson
+                     , time
+                     , data-default
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   default-language:    Haskell2010
-
+  default-extensions:  OverloadedStrings
 
 source-repository head
   type:     git
