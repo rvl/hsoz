@@ -10,10 +10,9 @@ module Network.Hawk.Server
        , authenticatePayload
        , HawkReq(..)
        , header
-       , defaultAuthReqOpts
-       , defaultAuthOpts
        , AuthReqOpts(..)
        , AuthOpts(..)
+       , def
        , module Network.Hawk.Server.Types
        ) where
 
@@ -69,16 +68,11 @@ data AuthOpts = AuthOpts
   , saIronLocaltimeOffset :: NominalDiffTime -- fixme: check this is still needed
   }
 
--- | Default parameters for 'authenticateRequest'.
-defaultAuthReqOpts = AuthReqOpts Nothing Nothing Nothing "bewit" defaultAuthOpts
-
-defaultAuthOpts = AuthOpts (\x t n -> True) 60 0
-
 instance Default AuthReqOpts where
-  def = defaultAuthReqOpts
+  def = AuthReqOpts Nothing Nothing Nothing "bewit" def
 
 instance Default AuthOpts where
-  def = defaultAuthOpts
+  def = AuthOpts (\x t n -> True) 60 0
 
 -- | Checks the @Authorization@ header of a 'Network.Wai.Request' and
 -- (optionally) a payload. The header will be parsed and verified with

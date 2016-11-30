@@ -5,8 +5,8 @@ import           Data.ByteString           (ByteString)
 import qualified Data.ByteString.Char8     as S8
 import qualified Data.ByteString.Lazy      as BL
 import qualified Data.ByteString.Lazy.Char8 as L8
+import           Data.Default
 import qualified Data.Map                  as M
-import           Data.Monoid
 import           Data.Monoid
 import           Data.Text                 (Text)
 import qualified Data.Text                 as T
@@ -28,9 +28,8 @@ auth id = return $ Right (Credentials sharedKey (HawkAlgo SHA256), "Steve")
 
 app :: Application
 app req respond = do
-  let opts = Hawk.defaultAuthReqOpts
   payload <- lazyRequestBody req
-  res <- Hawk.authenticateRequest opts auth req (Just payload)
+  res <- Hawk.authenticateRequest def auth req (Just payload)
   respond $ case res of
     Right (Hawk.AuthSuccess creds artifacts user) -> do
       let ext = decodeUtf8 <$> shaExt artifacts

@@ -25,6 +25,7 @@ import           Data.Aeson.Types          (ToJSON)
 import           Data.ByteString           (ByteString)
 import           Data.Maybe                (fromMaybe, isJust)
 import           Data.Monoid               ((<>))
+import           Data.Default
 import           Data.Proxy
 import           Data.Text                 (Text)
 import qualified Data.Text                 as T
@@ -57,7 +58,7 @@ data OzServerOpts = OzServerOpts
 -- something secret.
 defaultOzServerOpts :: Key -> OzServerOpts
 defaultOzServerOpts p = OzServerOpts p defaultLoadApp defaultLoadGrant
-  defaultTicketOpts Hawk.defaultAuthReqOpts defaultEndpoints
+  defaultTicketOpts def defaultEndpoints
 
 defaultLoadApp :: OzLoadApp
 defaultLoadApp _ = return $ Left "ozLoadApp not set"
