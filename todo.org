@@ -1,22 +1,28 @@
+# -*- org -*-
+#+STARTUP: content hidestars logdone logdrawer
+#+CATEGORY: hsoz
+
 * Project Status
 
-  The status of this implementation is /somewhat complete/. Iron and
-  Hawk are /mostly complete/ and Oz is /partly complete/. A short list
-  of currently missing items:
+  The status of this implementation is /somewhat complete/. Iron is
+  complete, Hawk is complete, but lacks a good client API. Oz is
+  /partially complete/.
 
 ** Iron
-*** DONE Use the "Data.SecureMem" package for hash equality comparisons.
+*** DONE done: Use the "Data.SecureMem" package for hash equality comparisons.
     CLOSED: [2016-10-30 Sun 13:11]
-*** DONE password lookup by ID.
+*** DONE done: password lookup by ID.
     CLOSED: [2016-10-30 Sun 13:11]
 
 ** Hawk
-*** DONE WAI Middlewares
+*** DONE done: WAI Middlewares
     CLOSED: [2016-10-28 Fri 17:21]
-*** DONE bewit generation
+*** DONE done: bewit generation
     CLOSED: [2016-10-30 Sun 12:00]
-*** DONE bewit authentication
+*** DONE done: bewit authentication
     CLOSED: [2016-10-30 Sun 12:00]
+*** TODO http-conduit wrapper
+*** TODO yesod authentication plugin
 
 ** Oz
 *** TODO A decent client API and ticket endpoints for Oz
@@ -24,14 +30,49 @@
 ** General
 *** docs upload command
     #+BEGIN_SRC shell
+    #!/usr/bin/env nix-shell
+    #! nix-shell -i bash -p rsync
+
+    cd `dirname $0`
     rsync -avz dist/doc/html/hsoz rodney.id.au:/srv/www/rodney.id.au/docs
     #+END_SRC
 
-*** TODO Test cases
 *** TODO Production testing in a real-world application
-*** TODO interop tests
 *** TODO remove utf8 partial functions
 *** TODO use more utils from errors package
 *** TODO split up packages
     - avoids bring in wai and/or scotty for iron and/or hawk
 *** TODO URIs should be ByteString not Text
+*** TODO ghcjs support
+    Add to executableDepends in default.nix:
+    ++ (pkgs.lib.optional (compiler != "ghcjs") [ wreq ]);
+    Then: nix-shell --arg compiler '"ghcjs"'
+*** TODO try to upgrade license to LGPL
+    Need to contact Hammer about derivatives of his work.
+
+** Testing
+*** Iron
+**** DONE done: Iron unit tests, same as js impl
+     CLOSED: [2016-11-30 Wed 10:53]
+**** TODO More unit tests around invalid passwords/keys/salts
+**** TODO testing key generation
+     - e.g. is the RNG ok.
+
+*** Hawk
+**** DONE done: Sunny day unit tests
+     CLOSED: [2016-11-30 Wed 10:58]
+**** TODO Implement full suite coming from js impl
+**** TODO interop tests
+***** TODO nix builds of hawk implementations
+      e.g. javascript, python, go
+***** TODO test harness
+***** TODO design a few test cases
+
+** Hackage stuff
+*** TODO specify 'license-file' in cabal
+*** TODO cut down 'description' in cabal
+    Hackage doesn't support formatting in the description text.
+*** TODO set package "stability" attribute
+*** TODO move description into README.md
+*** TODO add README.md as an extra source in cabal
+*** TODO some build-depends lower version bounds maybe?
