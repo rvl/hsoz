@@ -23,9 +23,12 @@
     CLOSED: [2016-10-30 Sun 12:00]
 *** TODO http-conduit wrapper
 *** TODO yesod authentication plugin
+*** DONE rename default functions to def and re-export def
+    CLOSED: [2016-11-30 Wed 22:47]
 
 ** Oz
 *** TODO A decent client API and ticket endpoints for Oz
+
 
 ** General
 *** docs upload command
@@ -43,7 +46,8 @@
 *** TODO split up packages
     - avoids bring in wai and/or scotty for iron and/or hawk
 *** TODO URIs should be ByteString not Text
-*** TODO ghcjs support
+*** DONE ghcjs support
+    CLOSED: [2016-11-30 Wed 21:44]
     Add to executableDepends in default.nix:
     ++ (pkgs.lib.optional (compiler != "ghcjs") [ wreq ]);
     Then: nix-shell --arg compiler '"ghcjs"'
@@ -68,11 +72,20 @@
 ***** TODO test harness
 ***** TODO design a few test cases
 
+
 ** Hackage stuff
-*** TODO specify 'license-file' in cabal
-*** TODO cut down 'description' in cabal
+*** DONE specify 'license-file' in cabal
+    CLOSED: [2016-11-30 Wed 22:35]
+*** DONE cut down 'description' in cabal
+    CLOSED: [2016-11-30 Wed 22:35]
     Hackage doesn't support formatting in the description text.
-*** TODO set package "stability" attribute
-*** TODO move description into README.md
-*** TODO add README.md as an extra source in cabal
+*** DONE set package "stability" attribute
+    CLOSED: [2016-11-30 Wed 22:35]
+    is an obsolete attribute ... but
+*** DONE move description into README.md
+    CLOSED: [2016-11-30 Wed 22:36]
+*** DONE add README.md as an extra source in cabal
+    CLOSED: [2016-11-30 Wed 22:36]
+*** DONE tags
+    CLOSED: [2016-11-30 Wed 22:36]
 *** TODO some build-depends lower version bounds maybe?
