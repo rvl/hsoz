@@ -1,5 +1,5 @@
 name:                hsoz
-version:             0.1.0.0
+version:             0.0.0.2
 synopsis:            Iron, Hawk, Oz: Web auth protocols
 description:
 
@@ -55,7 +55,7 @@ license:             BSD3
 author:              Rodney Lorrimar
 maintainer:          dev@rodney.id.au
 copyright:           2016 Rodney Lorrimar
-category:            Web
+category:            Web, Authentication
 build-type:          Simple
 extra-doc-files:     images/*.png
 cabal-version:       >=1.10
@@ -158,8 +158,7 @@ test-suite hsoz-test
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test
   main-is:             Main.hs
-  other-modules:       Spec
-                     , Network.Iron.Tests
+  other-modules:       Network.Iron.Tests
                      , Network.Hawk.Tests
                      , Network.Oz.Tests
   build-depends:       base
