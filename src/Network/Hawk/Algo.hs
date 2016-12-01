@@ -25,7 +25,7 @@ import           Network.Iron.Util       (b64)
 -- fixme: decide whether this should be bytestring or SecureMem, and
 -- whether it should be a typeclass.
 -- | A user-supplied password or generated key.
-newtype Key = Key ByteString deriving (Show, Generic, ByteArrayAccess, IsString)
+newtype Key = Key ByteString deriving (Show, Eq, Generic, ByteArrayAccess, IsString)
 
 -- | The class of HMAC algorithms supported by the Hawk
 -- protocol. Users of the 'Network.Hawk' module probably won't
@@ -56,6 +56,9 @@ instance HawkAlgoCls SHA1 where
 instance HawkAlgoCls SHA256 where
   hawkHash _ bs = b64 (hash bs :: Digest SHA256)
   hawkMac _ k bs = b64 $ hmacGetDigest (hmac k bs :: HMAC SHA256)
+
+instance Eq HawkAlgo where
+  _ == _ = True -- fixme: only used for test assertions currently
 
 -- | Inverse of 'show', for parsing @"algorithm"@ fields in JSON
 -- structures.

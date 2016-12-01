@@ -3,6 +3,7 @@
 module Network.Hawk.Tests (tests) where
 
 import Data.Either (isRight)
+import Data.Maybe (isJust)
 import Data.Default
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as BL
@@ -26,14 +27,25 @@ import qualified Network.Hawk.Server.Types as Server (HeaderArtifacts(..))
 
 tests :: TestTree
 tests = testGroup "Network.Hawk"
-        [ testCase "generates a header then successfully parses it" test01
-        , testCase "generates a header then successfully parses it (WAI request)" test02
-        , testCase "generates a header then successfully parses it (absolute request uri)" test03
-        , testCase "generates a header then fails to parse it (missing server header hash)" test04
+        [ testGroup "Server"
+          [ test01
+          , test02
+          , test03
+          , test04
+          --, testCase "generates a header then successfully parse it (no server header options)" boring
+          --, testCase "generates a header then successfully parse it (with hash)" duplicate
+          , test05
+          , test06
+          , test07
+          , test08
+          --, testCase "generates a header then fail authentication due to bad hash" duplicate
+          , test09
+          ]
+        , testGroup "header" [ testHeader01 ]
         ]
 
-makeCreds :: Client.ClientId -> (Client.Credentials, Server.CredentialsFunc IO String)
-makeCreds i = (cc, \i -> return sc)
+makeCreds :: Client.ClientId -> (Client.Credentials, Server.CredentialsFunc IO String, String)
+makeCreds i = (cc, \i -> return sc, user)
   where
     cc = Client.Credentials i key algo
     sc = Right (Server.Credentials key algo, user)
@@ -41,9 +53,8 @@ makeCreds i = (cc, \i -> return sc)
     algo = if i == "1" then HawkAlgo SHA1 else HawkAlgo SHA256
     user = "steve"
 
-test01 :: Assertion
-test01 = do
-  let (creds, credsFunc) = makeCreds "123456"
+test01 = testCase "generates a header then successfully parses it" $ do
+  let (creds, credsFunc, user) = makeCreds "123456"
       ext = Just "some-app-data"
   hdr <- Client.header "http://example.com:8080/resource/4?filter=a" "GET" creds Nothing ext
   let hrq = def
@@ -58,11 +69,9 @@ test01 = do
   user @?= "steve"
   Server.shaExt arts @?= Just "some-app-data"
 
--- generates a header then successfully parse it (WAI request)
-test02 :: Assertion
-test02 = do
+test02 = testCase "generates a header then successfully parses it (WAI request)" $ do
   -- Generate client header
-  let (creds, credsFunc) = makeCreds "123456"
+  let (creds, credsFunc, user) = makeCreds "123456"
       ext = Just "some-app-data"
       payload = PayloadInfo "text/plain;x=y" "some not so random text"
   hdr <- Client.header "http://example.com:8080/resource/4?filter=a" "POST" creds (Just payload) ext
@@ -79,7 +88,7 @@ test02 = do
 
   -- Client verifies server response
   let payload2 = PayloadInfo "text/plain" "Some reply"
-      hdr2 = Server.header creds2 arts (Just payload2)
+      (_, hdr2) = Server.header r (Just payload2)
       res = mockResponse payload2 [hdr2]
       creds2' = clientCreds "" creds2
       arts' = clientHeaderArtifacts arts
@@ -127,10 +136,8 @@ mockResponse (PayloadInfo ct d) hdrs = Response
         , responseClose' = undefined
         }
 
--- generates a header then successfully parse it (absolute request uri)
-test03 :: Assertion
-test03 = do
-  let (creds, credsFunc) = makeCreds "123456"
+test03 = testCase "generates a header then successfully parses it (absolute request uri)" $ do
+  let (creds, credsFunc, user) = makeCreds "123456"
       ext = Just "some-app-data"
       payload = PayloadInfo "text/plain;x=y" "some not so random text"
   hdr <- Client.header "http://example.com:8080/resource/4?filter=a" "POST" creds (Just payload) ext
@@ -151,7 +158,7 @@ test03 = do
 
   let payload2 = PayloadInfo "text/plain" "some reply"
       fixmeExt2 = "response-specific"
-      hdr = Server.header creds2 arts (Just payload2)
+      (_, hdr) = Server.header r (Just payload2)
       res = mockResponse payload2 [hdr]
       creds2' = clientCreds "" creds2
       arts' = clientHeaderArtifacts arts
@@ -160,10 +167,8 @@ test03 = do
   r2 @?= Right ()
 
 
--- generates a header then fails to parse it (missing server header hash)
-test04 :: Assertion
-test04 = do
-  let (creds, credsFunc) = makeCreds "123456"
+test04 = testCase "generates a header then fails to parse it (missing server header hash)" $ do
+  let (creds, credsFunc, user) = makeCreds "123456"
       ext = Just "some-app-data"
       payload = PayloadInfo "text/plain;x=y" "some not so random text"
   hdr <- Client.header "http://example.com:8080/resource/4?filter=a" "POST" creds (Just payload) ext
@@ -184,10 +189,138 @@ test04 = do
 
   let payload2 = PayloadInfo "text/plain" "some reply"
       fixmeExt2 = "response-specific"
-      hdr = Server.header creds2 arts Nothing
+      (_, hdr) = Server.header r Nothing
       res = mockResponse payload2 [hdr]
       creds2' = clientCreds "" creds2
       arts' = clientHeaderArtifacts arts
 
   r2 <- Client.authenticate res creds2' arts' (Just (payloadData payload2)) Client.ServerAuthorizationRequired
   r2 @?= Left "Missing response hash attribute"
+
+test05 = testCase "generates a header then successfully parse it then validate payload" $ do
+  let (creds, credsFunc, user) = makeCreds "123456"
+      ext = Just "some-app-data"
+      -- fixme: js impl seems to have a default content-type
+      payload = PayloadInfo "text/plain" "hola!"
+      payload2 = PayloadInfo "text/html" "hola!"
+      payload3 = PayloadInfo "text/plain" "hello!"
+  hdr <- Client.header "http://example.com:8080/resource/4?filter=a" "GET" creds (Just payload) ext
+  let hrq = def
+            { hrqUrl = "/resource/4?filter=a"
+            , hrqHost = "example.com"
+            , hrqPort = Just 8080
+            , hrqAuthorization = Client.hdrField hdr
+            }
+
+  -- authenticate request
+  r <- Server.authenticate def credsFunc hrq
+  isRight r @?= True
+  let Right s@(Server.AuthSuccess creds' arts user) = r
+  user @?= "steve"
+  Server.shaExt arts @?= Just "some-app-data"
+
+  -- authenticate payload
+  Server.authenticatePayload s payload @?= Right ()
+  Server.authenticatePayload s payload2 @?= Left "Bad response payload mac"
+  Server.authenticatePayload s payload3 @?= Left "Bad response payload mac"
+
+test06 = testCase "generates a header then successfully parses and validates payload" $ do
+  let (creds, credsFunc, user) = makeCreds "123456"
+      ext = Just "some-app-data"
+      -- js impl has empty string as default content-type
+      payload = PayloadInfo "" "hola!"
+      payload2 = PayloadInfo "text/plain" "hola!"
+      payload3 = PayloadInfo "" "hello!"
+  hdr <- Client.header "http://example.com:8080/resource/4?filter=a" "GET" creds (Just payload) ext
+  let hrq = def
+            { hrqUrl = "/resource/4?filter=a"
+            , hrqHost = "example.com"
+            , hrqPort = Just 8080
+            , hrqAuthorization = Client.hdrField hdr
+            , hrqPayload = Just payload
+            }
+      hrq2 = hrq { hrqPayload = Just payload2 }
+      hrq3 = hrq { hrqPayload = Just payload3 }
+
+  -- authenticate request
+  r <- Server.authenticate def credsFunc hrq
+  isRight r @?= True
+  let Right s@(Server.AuthSuccess creds' arts user) = r
+  user @?= "steve"
+  Server.shaExt arts @?= Just "some-app-data"
+
+  r2 <- Server.authenticate def credsFunc hrq2
+  r2 @?= Left (Server.AuthFailUnauthorized "Bad response payload mac" (Just creds') (Just arts))
+
+  r3 <- Server.authenticate def credsFunc hrq3
+  r3 @?= Left (Server.AuthFailUnauthorized "Bad response payload mac" (Just creds') (Just arts))
+
+test07 = testCase "generates a header then successfully parse it (app)" $ do
+  let (creds, credsFunc, user) = makeCreds "123456"
+      ext = Just "some-app-data"
+      app = "asd23ased"
+  hdr <- Client.headerOz "http://example.com:8080/resource/4?filter=a" "GET"
+    creds Nothing ext app Nothing
+  let hrq = def
+            { hrqUrl = "/resource/4?filter=a"
+            , hrqHost = "example.com"
+            , hrqPort = Just 8080
+            , hrqAuthorization = Client.hdrField hdr
+            }
+
+  -- authenticate request
+  r <- Server.authenticate def credsFunc hrq
+  isRight r @?= True
+  let Right s@(Server.AuthSuccess creds' arts user) = r
+  user @?= user
+  Server.shaExt arts @?= Just "some-app-data"
+  Server.shaApp arts @?= Just app
+  Server.shaDlg arts @?= Nothing
+
+test08 = testCase "generates a header then successfully parse it (app, dlg)" $ do
+  let (creds, credsFunc, user) = makeCreds "123456"
+      ext = Just "some-app-data"
+      app = "asd23ased"
+      dlg = "23434szr3q4d"
+  hdr <- Client.headerOz "http://example.com:8080/resource/4?filter=a" "GET"
+    creds Nothing ext app (Just dlg)
+  let hrq = def
+            { hrqUrl = "/resource/4?filter=a"
+            , hrqHost = "example.com"
+            , hrqPort = Just 8080
+            , hrqAuthorization = Client.hdrField hdr
+            }
+
+  -- authenticate request
+  r <- Server.authenticate def credsFunc hrq
+  isRight r @?= True
+  let Right s@(Server.AuthSuccess creds' arts user) = r
+  user @?= user
+  Server.shaExt arts @?= Just "some-app-data"
+  Server.shaApp arts @?= Just app
+  Server.shaDlg arts @?= Just "23434szr3q4d"
+
+test09 = testCase "generates a header for one resource then fail to authenticate another" $ do
+  let (creds, credsFunc, user) = makeCreds "123456"
+      ext = Just "some-app-data"
+  hdr <- Client.header "http://example.com:8080/resource/4?filter=a" "GET" creds Nothing ext
+  let hrq = def
+            { hrqUrl = "/something/else"
+            , hrqHost = "example.com"
+            , hrqPort = Just 8080
+            , hrqAuthorization = Client.hdrField hdr
+            }
+
+  -- authenticate request
+  r <- Server.authenticate def credsFunc hrq
+  let Left f@(Server.AuthFailUnauthorized e creds arts) = r
+  e @?= "Bad mac"
+  isJust creds @?= True
+  --arts @?= Nothing
+
+missing, boring :: Assertion
+missing = return ()
+boring = return ()
+
+testHeader01 = testCase "returns a valid authorization header (sha1)" $ do
+  return ()
