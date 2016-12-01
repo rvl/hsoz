@@ -22,6 +22,7 @@ import           Network.HTTP.Types.Header (Header, hContentType, hWWWAuthentica
 import qualified Data.Vault.Lazy as V
 
 import qualified Network.Hawk.Server as Hawk
+import qualified Network.Hawk.Server.Types as Hawk
 
 -- | Whether the middleware should verify the payload hash by reading
 -- the entire request body. 'Network.Hawk.Server.authenticatePayload'
@@ -52,16 +53,14 @@ genHawkAuth auth app req respond = do
     Right s -> do
       let vault' = V.insert k s (vault req)
           req' = req { vault = vault' }
+      -- fixme: insert Server-Authorization header
       app req' respond
-    Left f -> respond $ case f of
-      Hawk.AuthFailBadRequest e _ ->
-        responseLBS badRequest400 [plain, wwwAuthHawk] (L8.pack e)
-      Hawk.AuthFailUnauthorized e _ _ ->
-        responseLBS unauthorized401 [plain, wwwAuthHawk] (L8.pack e)
-      Hawk.AuthFailStaleTimeStamp e creds artifacts ->
-        let autho = Hawk.header creds artifacts Nothing
-        in responseLBS unauthorized401 [plain, autho] (L8.pack e)
+    Left f -> respond $ failResponse f
 
-plain, wwwAuthHawk :: Header
-plain = (hContentType, "text/plain")
-wwwAuthHawk = (hWWWAuthenticate, "Hawk")
+failResponse :: Hawk.AuthFail -> Response
+failResponse f = responseLBS status [(hContentType, plain), hdr] msg
+  where
+    (status, hdr) = Hawk.header (Left f) (Just payload)
+    msg = L8.pack (Hawk.authFailMessage f)
+    plain = "text/plain"
+    payload = Hawk.PayloadInfo plain msg

@@ -183,13 +183,10 @@ responseHeader h = lookup h . responseHeaders
 checkWwwAuthenticateHeader :: Credentials -> ByteString -> Either String POSIXTime
 checkWwwAuthenticateHeader creds w = do
   WwwAuthenticateHeader{..} <- parseWwwAuthenticateHeader w
-  let tsm = calculateTsMac wahTs creds
+  let tsm = calculateTsMac (ccAlgorithm creds) wahTs
   if wahTsm `constEqBytes` tsm
     then Right wahTs
     else Left "Invalid server timestamp hash"
-
-calculateTsMac :: POSIXTime -> Credentials -> ByteString
-calculateTsMac = undefined  -- fixme: achtung minen
 
 checkServerAuthorizationHeader :: Credentials -> HeaderArtifacts
                                   -> ServerAuthorizationCheck -> POSIXTime

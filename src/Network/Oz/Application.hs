@@ -174,11 +174,12 @@ ozAppScotty OzServerOpts{..} = do
         Left f                  -> hawkAuthFail f
 
     -- respond to failed hawk authentication
+    -- fixme: see also: Hawk.Middleware.failResponse
     hawkAuthFail :: Hawk.AuthFail -> ActionM a
-    hawkAuthFail (Hawk.AuthFailBadRequest e _)       = Boom.badRequest e
-    hawkAuthFail (Hawk.AuthFailUnauthorized e _ _)   = Boom.unauthorized e
+    hawkAuthFail (Hawk.AuthFailBadRequest e _)         = Boom.badRequest e
+    hawkAuthFail (Hawk.AuthFailUnauthorized e _ _)     = Boom.unauthorized e
     -- fixme: need to send back server's time so client can apply offset
-    hawkAuthFail (Hawk.AuthFailStaleTimeStamp e c a) = Boom.unauthorized e
+    hawkAuthFail (Hawk.AuthFailStaleTimeStamp e t c a) = Boom.unauthorized e
 
     loadAppAction appId = do
       appCfg <- liftIO $ loadApp appId

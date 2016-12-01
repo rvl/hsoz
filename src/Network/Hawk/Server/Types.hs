@@ -5,6 +5,7 @@ module Network.Hawk.Server.Types
   ( AuthResult
   , AuthResult'(..)
   , AuthFail(..)
+  , authFailMessage
   , AuthSuccess(..)
   , Credentials(..)
   , HeaderArtifacts(..)
@@ -32,8 +33,8 @@ type AuthResult' r = Either AuthFail r
 -- another authenticated request.
 data AuthFail = AuthFailBadRequest String (Maybe HeaderArtifacts)
               | AuthFailUnauthorized String (Maybe Credentials) (Maybe HeaderArtifacts)
-              | AuthFailStaleTimeStamp String Credentials HeaderArtifacts
-              deriving Show
+              | AuthFailStaleTimeStamp String POSIXTime Credentials HeaderArtifacts
+              deriving (Show, Eq)
 
 -- | Successful authentication produces a set of credentials and
 -- "artifacts". Also included in the result is the result of
@@ -41,6 +42,12 @@ data AuthFail = AuthFailBadRequest String (Maybe HeaderArtifacts)
 data AuthSuccess t = AuthSuccess Credentials HeaderArtifacts t
 
 instance Show t => Show (AuthSuccess t)
+instance Eq t => Eq (AuthSuccess t)
+
+authFailMessage :: AuthFail -> String
+authFailMessage (AuthFailBadRequest e _) = e
+authFailMessage (AuthFailUnauthorized e _ _) = e
+authFailMessage (AuthFailStaleTimeStamp e _ _ _) = e
 
 ----------------------------------------------------------------------------
 
@@ -65,7 +72,7 @@ instance Default HawkReq where
 data Credentials = Credentials
   { scKey       :: Key -- ^ Key
   , scAlgorithm :: HawkAlgo -- ^ HMAC
-  } deriving (Show, Generic)
+  } deriving (Show, Eq, Generic)
 
 -- | HeaderArtifacts are the attributes which are included in the
 -- verification. The terminology (and spelling) come from the original
@@ -83,7 +90,7 @@ data HeaderArtifacts = HeaderArtifacts
   , shaExt       :: Maybe ByteString
   , shaApp       :: Maybe Text
   , shaDlg       :: Maybe ByteString
-  } deriving Show
+  } deriving (Show, Eq)
 
 -- | A user-supplied callback to get credentials from a client
 -- identifier.

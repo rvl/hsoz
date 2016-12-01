@@ -31,16 +31,18 @@ app req respond = do
   payload <- lazyRequestBody req
   res <- Hawk.authenticateRequest def auth req (Just payload)
   respond $ case res of
-    Right (Hawk.AuthSuccess creds artifacts user) -> do
-      let ext = decodeUtf8 <$> shaExt artifacts
-      let payload = textPayload $ "Hello " <> user <> maybe "" (" " <>) ext
-      let autho = Hawk.header creds artifacts (Just payload)
-      responseLBS status200 [payloadCt payload, autho] (payloadData payload)
-    Left (Hawk.AuthFailBadRequest e _) -> responseLBS badRequest400 [] (L8.pack e)
-    Left (Hawk.AuthFailUnauthorized _ _ _) -> responseLBS unauthorized401 [plain] "Shoosh!"
-    Left (Hawk.AuthFailStaleTimeStamp e creds artifacts) -> do
-      let autho = Hawk.header creds artifacts Nothing
-      responseLBS unauthorized401 [plain, autho] (L8.pack e)
+    Right (Hawk.AuthSuccess creds artifacts user) -> let
+      ext = decodeUtf8 <$> shaExt artifacts
+      payload = textPayload $ "Hello " <> user <> maybe "" (" " <>) ext
+      (ok, autho) = Hawk.header res (Just payload)
+      in responseLBS ok [payloadCt payload, autho] (payloadData payload)
+    Left f -> let
+      (status, hdr) = Hawk.header res Nothing
+      msg = case f of
+        AuthFailBadRequest e _         -> e
+        AuthFailUnauthorized e _ _     -> "Shoosh!"
+        AuthFailStaleTimeStamp e _ _ _ -> e
+      in responseLBS status [plain, hdr] (L8.pack msg)
 
 textPayload :: Text -> PayloadInfo
 textPayload = PayloadInfo (snd plain) . BL.fromStrict . encodeUtf8

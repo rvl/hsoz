@@ -35,8 +35,9 @@ import           Data.Default              (Default(..))
 import           Data.Time.Clock           (NominalDiffTime)
 import           Data.Time.Clock.POSIX
 import           Network.HTTP.Types.Header (Header, hAuthorization,
-                                            hContentType)
+                                            hContentType, hWWWAuthenticate)
 import           Network.HTTP.Types.Method (Method, methodGet, methodPost)
+import           Network.HTTP.Types.Status (Status, ok200, badRequest400, unauthorized401)
 import           Network.HTTP.Types.URI    (renderQuery)
 import           Network.Wai               (Request, rawPathInfo,
                                             rawQueryString, queryString,
@@ -193,12 +194,13 @@ authenticate' :: POSIXTime -> AuthOpts -> (Credentials, t)
               -> HawkReq -> AuthorizationHeader -> AuthResult t
 authenticate' now opts (creds, t) hrq@HawkReq{..} sah@AuthorizationHeader{..} = do
   let arts = headerArtifacts hrq sah
-  let doCheck = authResult creds arts t
-  let mac = serverMac creds arts HawkHeader
+      doCheck = authResult creds arts t
+      doCheckExp = authResultExp now creds arts t
+      mac = serverMac creds arts HawkHeader
   if mac `constEqBytes` sahMac then do
     doCheck $ checkPayloadHash (scAlgorithm creds) sahHash hrqPayload
     doCheck $ checkNonce (saCheckNonce opts) (scKey creds) sahNonce sahTs
-    doCheck $ checkExpiration now (saTimestampSkew opts) sahTs
+    doCheckExp $ checkExpiration now (saTimestampSkew opts) sahTs
     doCheck $ Right ()
     else Left (AuthFailUnauthorized "Bad mac" (Just creds) (Just arts))
 
@@ -207,6 +209,12 @@ authResult :: Credentials -> HeaderArtifacts -> t
            -> Either String a -> Either AuthFail (AuthSuccess t)
 authResult c a t (Right _) = Right (AuthSuccess c a t)
 authResult c a _ (Left e)  = Left (AuthFailUnauthorized e (Just c) (Just a))
+
+-- fixme: refactor with authResult and doCheck
+authResultExp :: POSIXTime -> Credentials -> HeaderArtifacts -> t
+           -> Either String a -> Either AuthFail (AuthSuccess t)
+authResultExp _ c a t (Right _) = Right (AuthSuccess c a t)
+authResultExp now c a _ (Left e)  = Left (AuthFailStaleTimeStamp e now c a)
 
 -- | Constructs artifacts bundle out of the request.
 headerArtifacts :: HawkReq -> AuthorizationHeader -> HeaderArtifacts
@@ -227,8 +235,16 @@ authenticatePayload (AuthSuccess c a _) p =
 -- previous call to 'authenticateRequest' (or 'authenticate').
 --
 -- If a payload is supplied, its hash will be included in the header.
-header :: Credentials -> HeaderArtifacts -> Maybe PayloadInfo -> Header
-header creds arts payload = (hServerAuthorization, hawkHeaderString (catMaybes parts))
+header :: AuthResult t -> Maybe PayloadInfo -> (Status, Header)
+header (Right a) p = (ok200, (hServerAuthorization, headerSuccess a p))
+header (Left e) _ = (status e, (hWWWAuthenticate, headerFail e))
+  where
+    status (AuthFailBadRequest _ _)       = badRequest400
+    status (AuthFailUnauthorized _ _ _)   = unauthorized401
+    status (AuthFailStaleTimeStamp _ _ _ _) = unauthorized401
+
+headerSuccess :: AuthSuccess t -> Maybe PayloadInfo -> ByteString
+headerSuccess (AuthSuccess creds arts _) payload = hawkHeaderString (catMaybes parts)
   where
     parts :: [Maybe (ByteString, ByteString)]
     parts = [ Just ("mac", mac)
@@ -242,6 +258,21 @@ serverMac :: Credentials -> HeaderArtifacts -> HawkType -> ByteString
 serverMac Credentials{..} HeaderArtifacts{..} =
   calculateMac scAlgorithm scKey
     shaTimestamp shaNonce shaMethod shaResource shaHost shaPort
+
+headerFail :: AuthFail -> ByteString
+headerFail (AuthFailBadRequest e _) = hawkHeaderError e []
+headerFail (AuthFailUnauthorized e _ _) = hawkHeaderError e []
+headerFail (AuthFailStaleTimeStamp e now creds artifacts) = timestampMessage e now creds
+
+hawkHeaderError :: String -> [(ByteString, ByteString)] -> ByteString
+hawkHeaderError e ps = hawkHeaderString (("error", S8.pack e):ps)
+
+timestampMessage :: String -> POSIXTime -> Credentials -> ByteString
+timestampMessage e now creds = hawkHeaderError e parts
+  where
+    parts = [ ("ts", (S8.pack . show . floor) now)
+            , ("tsm", calculateTsMac (scAlgorithm creds) now)
+            ]
 
 -- | User-supplied nonce validation function.
 type NonceFunc = Key -> POSIXTime -> Nonce -> Bool

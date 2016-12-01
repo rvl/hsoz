@@ -4,6 +4,7 @@ module Network.Hawk.Common
        ( calculateMac
        , escapeHeaderAttribute
        , hawkHeaderString
+       , calculateTsMac
        , calculatePayloadHash
        , checkPayloadHash
        , checkPayloadHashMaybe
@@ -76,7 +77,7 @@ hawk1String :: HawkType -> POSIXTime -> ByteString -> Method -> ByteString -> By
 -- fixme: ext and payload hash
 hawk1String t ts nonce method resource host port = newlines $
   [ "hawk.1." <> hawkType t
-  , (S8.pack . show . round) ts
+  , S8.pack . show . round $ ts
   , nonce
   , S8.map toUpper method
   , resource
@@ -117,6 +118,13 @@ calculatePayloadHash :: HawkAlgoCls a => a -> PayloadInfo -> ByteString
 -- fixme: maybe convert payload to strict further up the chain, or
 -- feed chunks to the hasher
 calculatePayloadHash algo payload = hawkHash algo (hawk1Payload payload)
+
+calculateTsMac :: HawkAlgoCls a => a -> POSIXTime -> ByteString
+calculateTsMac algo ts = hawkHash algo (hawk1Ts ts)
+
+hawk1Ts :: POSIXTime -> ByteString
+hawk1Ts ts = newlines ["hawk.1.ts", nowSecs ts]
+  where nowSecs = S8.pack . show . floor
 
 -- | The name of the authorization header which the server provides to
 -- the client.
