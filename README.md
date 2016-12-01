@@ -40,7 +40,7 @@ and at https://rodney.id.au/docs/hsoz/.
 ## Example Usage
 
 See the [Network.Iron](http://hackage.haskell.org/package/hsoz/docs/Network-Iron.html)
-documentation, and the [example](./tree/master/example/) directory of this
+documentation, and the [example](./example/) directory of this
 repository.
 
 ## Status
@@ -56,7 +56,7 @@ Haskell.
 *Please note*: until the example application is built, this library
 cannot be considered "battle-tested".
 
-There is also an `org-mode` file: [todo.org](./raw/master/todo.org).
+There is also an `org-mode` file: [todo.org](./todo.org?raw=1).
 
 ## Development
 

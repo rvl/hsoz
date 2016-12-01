@@ -25,6 +25,12 @@
 *** TODO yesod authentication plugin
 *** DONE rename default functions to def and re-export def
     CLOSED: [2016-11-30 Wed 22:47]
+*** TODO client ext -> bytestring
+*** TODO server dlg -> text
+*** DONE WWW-Authenticate header response
+    CLOSED: [2016-12-01 Thu 13:38]
+     expect(Hawk.utils.unauthorized('kaboom').output.headers['WWW-Authenticate']).to.equal('Hawk error="kaboom"');
+     expect(Hawk.utils.unauthorized('kaboom', { a: 'b' }).output.headers['WWW-Authenticate']).to.equal('Hawk a="b", error="kaboom"');
 
 ** Oz
 *** TODO A decent client API and ticket endpoints for Oz
