@@ -221,16 +221,22 @@ getBewit :: Credentials -> NominalDiffTime -> Maybe ExtData -> NominalDiffTime
 -- fixme: not much point having two time interval arguments?
 getBewit creds ttl ext offset uri = do
   exp <- fmap (+ (ttl + offset)) getPOSIXTime
-  return $ bewit exp <$> splitUrl uri
-  where
-    bewit exp = encode . clientMac HawkBewit creds . make
-      where
-        make (SplitURL host port resource) =
+  return $ encodeBewit creds <$> bewitArtifacts uri exp ext
+
+bewitArtifacts :: ByteString -> POSIXTime -> Maybe ExtData -> Maybe HeaderArtifacts
+bewitArtifacts uri exp ext = make <$> splitUrl uri
+  where make (SplitURL host port resource) =
           HeaderArtifacts "GET" host port resource "" exp "" "" Nothing ext Nothing Nothing
-        encode = b64url . S8.intercalate "\\" . parts
-        parts mac = [ encodeUtf8 . ccId $ creds
-                    , S8.pack . show . round $ exp
-                    , mac, fromMaybe "" ext ]
+
+encodeBewit :: Credentials -> HeaderArtifacts -> ByteString
+encodeBewit creds arts = bewitString (ccId creds) (haTimestamp arts) mac (haExt arts)
+  where mac = clientMac HawkBewit creds arts
+
+-- | Constructs a bewit: @id\exp\mac\ext@
+bewitString :: ClientId -> POSIXTime -> ByteString -> Maybe ExtData -> ByteString
+bewitString cid exp mac ext = b64url (S8.intercalate "\\" parts)
+  where parts = [ encodeUtf8 cid, S8.pack . show . round $ exp
+                , mac, fromMaybe "" ext ]
 
 ----------------------------------------------------------------------------
 
