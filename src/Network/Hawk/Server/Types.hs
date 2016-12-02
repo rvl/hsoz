@@ -8,7 +8,6 @@ module Network.Hawk.Server.Types
   , authFailMessage
   , AuthSuccess(..)
   , Credentials(..)
-  , HeaderArtifacts(..)
   , CredentialsFunc
   , HawkReq(..)
   , module Network.Hawk.Types
@@ -73,24 +72,6 @@ data Credentials = Credentials
   { scKey       :: Key -- ^ Key
   , scAlgorithm :: HawkAlgo -- ^ HMAC
   } deriving (Show, Eq, Generic)
-
--- | HeaderArtifacts are the attributes which are included in the
--- verification. The terminology (and spelling) come from the original
--- Javascript implementation of Hawk.
-data HeaderArtifacts = HeaderArtifacts
-  { shaMethod    :: Method
-  , shaHost      :: ByteString
-  , shaPort      :: Maybe Int
-  , shaResource  :: ByteString
-  , shaId        :: ClientId
-  , shaTimestamp :: POSIXTime
-  , shaNonce     :: ByteString
-  , shaMac       :: ByteString -- ^ Entire header hash
-  , shaHash      :: Maybe ByteString -- ^ Payload hash
-  , shaExt       :: Maybe ExtData
-  , shaApp       :: Maybe Text
-  , shaDlg       :: Maybe Text
-  } deriving (Show, Eq)
 
 -- | A user-supplied callback to get credentials from a client
 -- identifier.

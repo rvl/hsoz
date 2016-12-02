@@ -86,37 +86,39 @@ headerBase url method creds payload ext app dlg = do
   now <- getPOSIXTime
   nonce <- genNonce
   let hash = calculatePayloadHash (ccAlgorithm creds) <$> payload
-  let art = clientHeaderArtifacts now nonce method (encodeUtf8 url) hash ext app dlg
-  let auth = clientHawkAuth creds art
-  return $ Header auth art
+      mac  = clientMac HawkHeader creds arts
+      arts = clientHeaderArtifacts now nonce method (encodeUtf8 url) hash ext app dlg (ccId creds) mac
+      auth = clientHawkAuth arts
+  return $ Header auth arts
 
 clientHeaderArtifacts :: POSIXTime -> ByteString -> Method -> ByteString
                       -> Maybe ByteString -> Maybe ByteString
                       -> Maybe Text -> Maybe Text
+                      -> ClientId -> ByteString
                       -> HeaderArtifacts
-clientHeaderArtifacts now nonce method url hash ext app dlg = case splitUrl url of
-  Just (SplitURL host port resource) ->
-    HeaderArtifacts now nonce method host port resource hash ext app dlg
-  Nothing ->
-    HeaderArtifacts now nonce method "" Nothing url hash ext app dlg
-
-clientHawkAuth :: Credentials -> HeaderArtifacts -> ByteString
-clientHawkAuth creds arts@HeaderArtifacts{..} = hawkHeaderString (hawkHeaderItems items)
+clientHeaderArtifacts now nonce method url hash ext app dlg cid mac =
+  HeaderArtifacts method host port resource cid now nonce mac hash ext app dlg
   where
-    items = [ ("id", (Just . encodeUtf8 . ccId) creds)
-            , ("ts", (Just . S8.pack . show . round) chaTimestamp)
-            , ("nonce", Just chaNonce)
-            , ("hash", chaHash)
-            , ("ext", chaExt)
-            , ("mac", Just $ clientMac HawkHeader creds arts)
-            , ("app", encodeUtf8 <$> chaApp)
-            , ("dlg", encodeUtf8 <$> chaDlg)
+    (SplitURL host port resource) = fromMaybe relUrl $ splitUrl url
+    relUrl = SplitURL "" Nothing url
+
+clientHawkAuth :: HeaderArtifacts -> ByteString
+clientHawkAuth arts@HeaderArtifacts{..} = hawkHeaderString (hawkHeaderItems items)
+  where
+    items = [ ("id",    Just . encodeUtf8 $ haId)
+            , ("ts",    Just . S8.pack . show . round $ haTimestamp)
+            , ("nonce", Just haNonce)
+            , ("hash",  haHash)
+            , ("ext",   haExt)
+            , ("mac",   Just haMac)
+            , ("app",   encodeUtf8 <$> haApp)
+            , ("dlg",   encodeUtf8 <$> haDlg)
             ]
 
 clientMac :: HawkType -> Credentials -> HeaderArtifacts -> ByteString
 clientMac h Credentials{..} HeaderArtifacts{..} =
   calculateMac ccAlgorithm ccKey
-      chaTimestamp chaNonce chaMethod chaResource chaHost chaPort h
+      haTimestamp haNonce haMethod haResource haHost haPort h
 
 hawkHeaderItems :: [(ByteString, Maybe ByteString)] -> [(ByteString, ByteString)]
 hawkHeaderItems = catMaybes . map pull
@@ -224,7 +226,7 @@ getBewit creds ttl ext offset uri = do
     bewit exp = encode . clientMac HawkBewit creds . make
       where
         make (SplitURL host port resource) =
-          HeaderArtifacts exp "" "GET" host port resource Nothing ext Nothing Nothing
+          HeaderArtifacts "GET" host port resource "" exp "" "" Nothing ext Nothing Nothing
         encode = b64url . S8.intercalate "\\" . parts
         parts mac = [ encodeUtf8 . ccId $ creds
                     , S8.pack . show . round $ exp

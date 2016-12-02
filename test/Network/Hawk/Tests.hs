@@ -22,8 +22,7 @@ import Network.Hawk
 import Network.Hawk.Server.Types (HawkReq(..), AuthSuccess(..))
 import qualified Network.Hawk.Client as Client
 import qualified Network.Hawk.Server as Server
-import qualified Network.Hawk.Client.Types as Client (HeaderArtifacts(..))
-import qualified Network.Hawk.Server.Types as Server (HeaderArtifacts(..))
+import qualified Network.Hawk.Types (HeaderArtifacts(..))
 
 tests :: TestTree
 tests = testGroup "Network.Hawk"
@@ -67,7 +66,7 @@ test01 = testCase "generates a header then successfully parses it" $ do
   isRight r @?= True
   let Right (Server.AuthSuccess creds' arts user) = r
   user @?= "steve"
-  Server.shaExt arts @?= Just "some-app-data"
+  Server.haExt arts @?= Just "some-app-data"
 
 test02 = testCase "generates a header then successfully parses it (WAI request)" $ do
   -- Generate client header
@@ -83,7 +82,7 @@ test02 = testCase "generates a header then successfully parses it (WAI request)"
   isRight r @? "Expected auth success, got: " ++ show r
   let Right s@(Server.AuthSuccess creds2 arts user) = r
   user @?= "steve"
-  Server.shaExt arts @?= Just "some-app-data"
+  Server.haExt arts @?= Just "some-app-data"
   Server.authenticatePayload s payload @?= Right ()
 
   -- Client verifies server response
@@ -91,30 +90,12 @@ test02 = testCase "generates a header then successfully parses it (WAI request)"
       (_, hdr2) = Server.header r (Just payload2)
       res = mockResponse payload2 [hdr2]
       creds2' = clientCreds "" creds2
-      arts' = clientHeaderArtifacts arts
+      arts' = arts
   r2 <- Client.authenticate res creds2' arts' (Just (payloadData payload2)) Client.ServerAuthorizationRequired
   r2 @?= Right ()
 
 clientCreds :: ClientId -> Server.Credentials -> Client.Credentials
 clientCreds i (Server.Credentials k a) = Client.Credentials i k a
-
--- fixme: there's possibly a case for merging these two types
--- server artifacts have header mac and client id
-clientHeaderArtifacts :: Server.HeaderArtifacts -> Client.HeaderArtifacts
-clientHeaderArtifacts Server.HeaderArtifacts{..} = Client.HeaderArtifacts
-  { chaTimestamp = shaTimestamp
-  , chaNonce     = shaNonce
-  , chaMethod    = shaMethod
-  , chaHost      = shaHost
-  , chaPort      = shaPort
-  , chaResource  = shaResource
-  , chaHash      = shaHash
-  , chaExt       = shaExt
-  , chaApp       = shaApp
-  , chaDlg       = shaDlg
-  -- , shaId        :: ClientId
-  -- , shaMac       :: ByteString
-  }
 
 mockRequest :: Method -> ByteString -> ByteString -> ByteString -> PayloadInfo -> RequestHeaders -> Request
 mockRequest method path qs host (PayloadInfo ct _) hdrs = defaultRequest
@@ -152,7 +133,7 @@ test03 = testCase "generates a header then successfully parses it (absolute requ
   isRight r @? "Expected auth success, got: " ++ show r
   let Right s@(Server.AuthSuccess creds2 arts user) = r
   user @?= "steve"
-  Server.shaExt arts @?= Just "some-app-data"
+  Server.haExt arts @?= Just "some-app-data"
   Server.authenticatePayload s payload @?= Right ()
 
   let payload2 = PayloadInfo "text/plain" "some reply"
@@ -160,7 +141,7 @@ test03 = testCase "generates a header then successfully parses it (absolute requ
       (_, hdr) = Server.header r (Just payload2)
       res = mockResponse payload2 [hdr]
       creds2' = clientCreds "" creds2
-      arts' = clientHeaderArtifacts arts
+      arts' = arts
 
   r2 <- Client.authenticate res creds2' arts' (Just (payloadData payload2)) Client.ServerAuthorizationRequired
   r2 @?= Right ()
@@ -183,7 +164,7 @@ test04 = testCase "generates a header then fails to parse it (missing server hea
   isRight r @? "Expected auth success, got: " ++ show r
   let Right s@(Server.AuthSuccess creds2 arts user) = r
   user @?= "steve"
-  Server.shaExt arts @?= Just "some-app-data"
+  Server.haExt arts @?= Just "some-app-data"
   Server.authenticatePayload s payload @?= Right ()
 
   let payload2 = PayloadInfo "text/plain" "some reply"
@@ -191,7 +172,7 @@ test04 = testCase "generates a header then fails to parse it (missing server hea
       (_, hdr) = Server.header r Nothing
       res = mockResponse payload2 [hdr]
       creds2' = clientCreds "" creds2
-      arts' = clientHeaderArtifacts arts
+      arts' = arts
 
   r2 <- Client.authenticate res creds2' arts' (Just (payloadData payload2)) Client.ServerAuthorizationRequired
   r2 @?= Left "Missing response hash attribute"
@@ -216,7 +197,7 @@ test05 = testCase "generates a header then successfully parse it then validate p
   isRight r @?= True
   let Right s@(Server.AuthSuccess creds' arts user) = r
   user @?= "steve"
-  Server.shaExt arts @?= Just "some-app-data"
+  Server.haExt arts @?= Just "some-app-data"
 
   -- authenticate payload
   Server.authenticatePayload s payload @?= Right ()
@@ -246,7 +227,7 @@ test06 = testCase "generates a header then successfully parses and validates pay
   isRight r @?= True
   let Right s@(Server.AuthSuccess creds' arts user) = r
   user @?= "steve"
-  Server.shaExt arts @?= Just "some-app-data"
+  Server.haExt arts @?= Just "some-app-data"
 
   r2 <- Server.authenticate def credsFunc hrq2
   r2 @?= Left (Server.AuthFailUnauthorized "Bad response payload mac" (Just creds') (Just arts))
@@ -272,9 +253,9 @@ test07 = testCase "generates a header then successfully parse it (app)" $ do
   isRight r @?= True
   let Right s@(Server.AuthSuccess creds' arts user) = r
   user @?= user
-  Server.shaExt arts @?= Just "some-app-data"
-  Server.shaApp arts @?= Just app
-  Server.shaDlg arts @?= Nothing
+  Server.haExt arts @?= Just "some-app-data"
+  Server.haApp arts @?= Just app
+  Server.haDlg arts @?= Nothing
 
 test08 = testCase "generates a header then successfully parse it (app, dlg)" $ do
   let (creds, credsFunc, user) = makeCreds "123456"
@@ -295,9 +276,9 @@ test08 = testCase "generates a header then successfully parse it (app, dlg)" $ d
   isRight r @?= True
   let Right s@(Server.AuthSuccess creds' arts user) = r
   user @?= user
-  Server.shaExt arts @?= Just "some-app-data"
-  Server.shaApp arts @?= Just app
-  Server.shaDlg arts @?= Just "23434szr3q4d"
+  Server.haExt arts @?= Just "some-app-data"
+  Server.haApp arts @?= Just app
+  Server.haDlg arts @?= Just "23434szr3q4d"
 
 test09 = testCase "generates a header for one resource then fail to authenticate another" $ do
   let (creds, credsFunc, user) = makeCreds "123456"

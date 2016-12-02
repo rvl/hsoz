@@ -32,7 +32,7 @@ app req respond = do
   res <- Hawk.authenticateRequest def auth req (Just payload)
   respond $ case res of
     Right (Hawk.AuthSuccess creds artifacts user) -> let
-      ext = decodeUtf8 <$> shaExt artifacts
+      ext = decodeUtf8 <$> haExt artifacts
       payload = textPayload $ "Hello " <> user <> maybe "" (" " <>) ext
       (ok, autho) = Hawk.header res (Just payload)
       in responseLBS ok [payloadCt payload, autho] (payloadData payload)

@@ -53,9 +53,9 @@ authenticate' ce p opts hawkOpts req =
     check r = r >>= check'
       where
         check' r@(AuthSuccess c a@HeaderArtifacts{..} t@OzSealedTicket{..})
-          | ozTicketApp ozTicket /= fromMaybe "" shaApp =
+          | ozTicketApp ozTicket /= fromMaybe "" haApp =
             Left $ AuthFailUnauthorized "Mismatching application id" (Just c) (Just a)
-          | ozTicketDlg ozTicket /= shaDlg && ozTicketDlg ozTicket /= Nothing =
+          | ozTicketDlg ozTicket /= haDlg && ozTicketDlg ozTicket /= Nothing =
             Left $ AuthFailUnauthorized "Mismatching delegated application id" (Just c) (Just a)
           | otherwise = Right r
 

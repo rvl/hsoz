@@ -84,7 +84,7 @@ ozAppScotty OzServerOpts{..} = do
     app :: ActionM (Either String OzSealedTicket)
     app = do
       (creds, arts) <- hawkAuthAction
-      appCfg <- loadAppAction (shaApp arts)
+      appCfg <- loadAppAction (haApp arts)
       Ticket.issue ozSecret appCfg Nothing ozTicketOpts
 
     -- fixme: flatten staircases ... use EitherT

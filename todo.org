@@ -37,6 +37,9 @@
     expect(Hawk.utils.unauthorized('kaboom').output.headers['WWW-Authenticate']).to.equal('Hawk error="kaboom"');
     expect(Hawk.utils.unauthorized('kaboom', { a: 'b' }).output.headers['WWW-Authenticate']).to.equal('Hawk a="b", error="kaboom"');
 
+*** TODO allow pre-calculated payload hashes
+    payloadHash :: Algorithm or Creds -> ContentType -> ByteString -> PayloadHash
+
 ** Oz
 *** TODO A decent client API and ticket endpoints for Oz
 

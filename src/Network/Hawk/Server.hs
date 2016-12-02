@@ -227,7 +227,7 @@ headerArtifacts HawkReq{..} AuthorizationHeader{..} =
 -- for example.
 authenticatePayload :: AuthSuccess t -> PayloadInfo -> Either String ()
 authenticatePayload (AuthSuccess c a _) p =
-  checkPayloadHash (scAlgorithm c) (shaHash a) (Just p)
+  checkPayloadHash (scAlgorithm c) (haHash a) (Just p)
 
 
 -- | Generates a suitable @Server-Authorization@ header to send back
@@ -251,13 +251,13 @@ headerSuccess (AuthSuccess creds arts _) payload = hawkHeaderString (catMaybes p
             , fmap ((,) "hash") hash
             , fmap ((,) "ext") ext]
     hash = calculatePayloadHash (scAlgorithm creds) <$> payload
-    ext = escapeHeaderAttribute <$> (shaExt arts)
+    ext = escapeHeaderAttribute <$> (haExt arts)
     mac = serverMac creds arts HawkResponse
 
 serverMac :: Credentials -> HeaderArtifacts -> HawkType -> ByteString
 serverMac Credentials{..} HeaderArtifacts{..} =
   calculateMac scAlgorithm scKey
-    shaTimestamp shaNonce shaMethod shaResource shaHost shaPort
+    haTimestamp haNonce haMethod haResource haHost haPort
 
 headerFail :: AuthFail -> ByteString
 headerFail (AuthFailBadRequest e _) = hawkHeaderError e []
