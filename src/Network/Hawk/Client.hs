@@ -1,5 +1,6 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE RecordWildCards           #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 
 -- | Functions for making Hawk-authenticated request headers and
 -- verifying responses from the server.
@@ -9,12 +10,17 @@ module Network.Hawk.Client
        , headerOz
        , getBewit
        , authenticate
+       , sign, signWithPayload
+       , sign', signWithPayload'
+       , withHawk
+       , withHawkPayload
        , ServerAuthorizationCheck(..)
        , Credentials(..)
        , Header(..)
        , Authorization
        , HeaderArtifacts
        , module Network.Hawk.Types
+       , HawkException(..)
        ) where
 
 import           Control.Monad.IO.Class    (MonadIO, liftIO)
@@ -35,14 +41,20 @@ import qualified Data.Text                 as T
 import           Data.Text.Encoding        (encodeUtf8)
 import           Data.Time.Clock           (NominalDiffTime)
 import           Data.Time.Clock.POSIX
-import           Network.HTTP.Types.Header (hContentType, hWWWAuthenticate, HeaderName)
+import           Network.HTTP.Types.Header (HeaderName, hContentType, hWWWAuthenticate, hAuthorization, ResponseHeaders)
 import           Network.HTTP.Types.Method (Method)
+import           Network.HTTP.Types.Status (statusCode)
 import           Network.HTTP.Types.URI    (extractPath)
 import           Network.HTTP.Client       (Response, responseHeaders)
-import           Network.Socket            (PortNumber, SockAddr (..))
+import           Network.HTTP.Client       (Request, requestHeaders, requestBody, getUri, method, secure)
+import           Network.HTTP.Client       (HttpException(..))
 import           URI.ByteString            (authorityHost, authorityPort,
                                             hostBS, laxURIParserOptions,
                                             parseURI, portNumber, uriAuthority)
+import           Data.Typeable             (Typeable)
+import           Control.Exception         (Exception, throwIO)
+import           Control.Monad.Catch       as E (MonadThrow(..), MonadCatch(..))
+import           Control.Monad             (join)
 
 import           Network.Hawk.Common
 import           Network.Hawk.Types
@@ -56,7 +68,7 @@ header :: Text -- ^ The request URL
        -> Method -- ^ The request method
        -> Credentials -- ^ Credentials used to generate the header
        -> Maybe PayloadInfo -- ^ Optional request payload
-       -> Maybe Text -- ^ @ext@ data
+       -> Maybe ExtData -- ^ @ext@ data
        -> IO Header
 header url method creds payload ext = headerBase url method creds payload ext Nothing Nothing
 
@@ -64,17 +76,17 @@ header url method creds payload ext = headerBase url method creds payload ext No
 -- requires another attribute -- the application id. It also has an
 -- optional delegated-by attribute, which is the application id of the
 -- application the credentials were directly issued to.
-headerOz :: Text -> Method -> Credentials -> Maybe PayloadInfo -> Maybe Text
+headerOz :: Text -> Method -> Credentials -> Maybe PayloadInfo -> Maybe ExtData
          -> Text -> Maybe Text -> IO Header
 headerOz url method creds payload ext app dlg = headerBase url method creds payload ext (Just app) dlg
 
-headerBase :: Text -> Method -> Credentials -> Maybe PayloadInfo -> Maybe Text
+headerBase :: Text -> Method -> Credentials -> Maybe PayloadInfo -> Maybe ExtData
            -> Maybe Text -> Maybe Text -> IO Header
 headerBase url method creds payload ext app dlg = do
   now <- getPOSIXTime
   nonce <- genNonce
   let hash = calculatePayloadHash (ccAlgorithm creds) <$> payload
-  let art = clientHeaderArtifacts now nonce method (encodeUtf8 url) hash (encodeUtf8 <$> ext) app dlg
+  let art = clientHeaderArtifacts now nonce method (encodeUtf8 url) hash ext app dlg
   let auth = clientHawkAuth creds art
   return $ Header auth art
 
@@ -122,9 +134,8 @@ splitUrl url = SplitURL <$> host <*> pure port <*> path
     path = fmap (const (extractPath url)) p
 
 genNonce :: IO ByteString
-genNonce = do
-  g <- getSystemDRG
-  return $ fst $ withRandomBytes g 10 B64.encode
+genNonce = takeRandom <$> getSystemDRG
+  where takeRandom g = fst $ withRandomBytes g 10 B64.encode
 
 -- | Whether the client wants to check the received
 -- @Server-Authorization@ header depends on the application.
@@ -138,12 +149,12 @@ authenticate :: Response body -> Credentials -> HeaderArtifacts
              -> IO (Either String ())
 authenticate r creds artifacts payload saCheck = do
   now <- getPOSIXTime
-  return $ clientAuthenticate' r creds artifacts payload saCheck now
+  return $ authenticate' r creds artifacts payload saCheck now
 
-clientAuthenticate' :: Response body -> Credentials -> HeaderArtifacts
-                    -> Maybe BL.ByteString -> ServerAuthorizationCheck
-                    -> POSIXTime -> Either String ()
-clientAuthenticate' r creds artifacts payload saCheck now = do
+authenticate' :: Response body -> Credentials -> HeaderArtifacts
+              -> Maybe BL.ByteString -> ServerAuthorizationCheck
+              -> POSIXTime -> Either String ()
+authenticate' r creds artifacts payload saCheck now = do
   let w = responseHeader hWWWAuthenticate r
   ts <- mapM (checkWwwAuthenticateHeader creds) w
   let sa = responseHeader hServerAuthorization r
@@ -178,8 +189,6 @@ responseHeader h = lookup h . responseHeaders
 --   has been verified, or
 -- * the `tsm` MAC digest calculated using the same client credentials
 --   over the timestamp has been verified.
---
--- fixme: implement checks for both of the above conditions
 checkWwwAuthenticateHeader :: Credentials -> ByteString -> Either String POSIXTime
 checkWwwAuthenticateHeader creds w = do
   WwwAuthenticateHeader{..} <- parseWwwAuthenticateHeader w
@@ -189,9 +198,9 @@ checkWwwAuthenticateHeader creds w = do
     else Left "Invalid server timestamp hash"
 
 checkServerAuthorizationHeader :: Credentials -> HeaderArtifacts
-                                  -> ServerAuthorizationCheck -> POSIXTime
-                                  -> Maybe ByteString
-                                  -> Either String (Maybe ServerAuthorizationReplyHeader)
+                               -> ServerAuthorizationCheck -> POSIXTime
+                               -> Maybe ByteString
+                               -> Either String (Maybe ServerAuthorizationReplyHeader)
 checkServerAuthorizationHeader _ _ ServerAuthorizationNotRequired _ Nothing = Right Nothing
 checkServerAuthorizationHeader _ _ ServerAuthorizationRequired _ Nothing = Left "Missing Server-Authorization header"
 checkServerAuthorizationHeader creds arts _ now (Just sa) = do
@@ -204,9 +213,8 @@ checkServerAuthorizationHeader creds arts _ now (Just sa) = do
 ----------------------------------------------------------------------------
 
 -- | Generate a bewit value for a given URI.
-getBewit :: Credentials -> NominalDiffTime -> Maybe ByteString -> NominalDiffTime
+getBewit :: Credentials -> NominalDiffTime -> Maybe ExtData -> NominalDiffTime
          -> ByteString -> IO (Maybe ByteString)
--- fixme: ext is a json value i think
 -- fixme: javascript version supports deconstructed parsed uri objects
 -- fixme: not much point having two time interval arguments?
 getBewit creds ttl ext offset uri = do
@@ -221,3 +229,72 @@ getBewit creds ttl ext offset uri = do
         parts mac = [ encodeUtf8 . ccId $ creds
                     , S8.pack . show . round $ exp
                     , mac, fromMaybe "" ext ]
+
+----------------------------------------------------------------------------
+
+sign :: MonadIO m => Credentials -> Maybe ExtData
+     -> Request -> m Request
+sign creds ext req = snd <$> signRequest creds ext Nothing req
+
+sign' :: MonadIO m => Credentials -> Maybe ExtData
+     -> Request -> m (HeaderArtifacts, Request)
+sign' creds ext req = signRequest creds ext Nothing req
+
+signWithPayload :: MonadIO m => Credentials -> Maybe ExtData -> PayloadInfo
+                -> Request -> m Request
+signWithPayload creds ext payload req = snd <$> signWithPayload' creds ext payload req
+
+signWithPayload' :: MonadIO m => Credentials -> Maybe ExtData -> PayloadInfo
+                 -> Request -> m (HeaderArtifacts, Request)
+signWithPayload' creds ext payload req = signRequest creds ext (Just payload) req
+
+signRequest :: MonadIO m => Credentials -> Maybe ExtData -> Maybe PayloadInfo
+            -> Request -> m (HeaderArtifacts, Request)
+signRequest creds ext payload req = do
+  let uri = T.pack . show . getUri $ req
+  hdr <- liftIO $ header uri (method req) creds payload ext
+  return $ (hdrArtifacts hdr, addAuth hdr req)
+
+addAuth :: Header -> Request -> Request
+addAuth hdr req = req { requestHeaders = (auth:requestHeaders req) }
+  where auth = (hAuthorization, hdrField hdr)
+
+data HawkException = HawkServerAuthorizationException String
+                   | HawkStaleTimestampException
+  deriving (Show, Typeable)
+instance Exception HawkException
+
+withHawk :: (MonadIO m, MonadThrow m, MonadCatch m) =>
+            Credentials -> Maybe ExtData -> ServerAuthorizationCheck
+         -> (Request -> m (Response body)) -> Request -> m (Response body)
+withHawk creds ext ck http req = do
+  (arts, req') <- sign' creds ext req
+  doSignedRequest creds arts ck http req'
+
+withHawkPayload :: (MonadIO m, MonadThrow m, MonadCatch m) =>
+                   Credentials -> Maybe ExtData -> PayloadInfo
+                -> ServerAuthorizationCheck
+                -> (Request -> m (Response body)) -> Request -> m (Response body)
+withHawkPayload creds ext payload ck http req = do
+  (arts, req') <- signWithPayload' creds ext payload req
+  doSignedRequest creds arts ck http req'
+
+doSignedRequest :: (MonadIO m, MonadThrow m, MonadCatch m) =>
+                   Credentials -> HeaderArtifacts -> ServerAuthorizationCheck
+                -> (Request -> m (Response body)) -> Request -> m (Response body)
+doSignedRequest creds arts ck http req = do
+  r <- http req
+  let body = Nothing -- Just $ getResponseBody r
+  case ck of
+    ServerAuthorizationRequired -> do
+      res <- liftIO $ authenticate r creds arts body ck
+      case res of
+        Left e -> throwM $ HawkServerAuthorizationException e
+        Right () -> return r
+    ServerAuthorizationNotRequired -> return r
+
+hawkTs :: Credentials -> ResponseHeaders -> Maybe POSIXTime
+hawkTs creds = join . fmap parseTs . wwwAuthenticate
+  where
+    wwwAuthenticate = lookup hWWWAuthenticate
+    parseTs = rightJust . checkWwwAuthenticateHeader creds

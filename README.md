@@ -63,7 +63,8 @@ There is also an `org-mode` file: [todo.org](./todo.org?raw=1).
 I welcome collaborators, particularly anyone who would like to develop
 authentication plugins for frameworks such as
 [Snap](http://snapframework.com/) and
-[Servant](https://haskell-servant.github.io/).
+[Servant](https://haskell-servant.github.io/), or a manager for
+[Wreq](http://www.serpentine.com/wreq/).
 
 ### Building with Stack
 

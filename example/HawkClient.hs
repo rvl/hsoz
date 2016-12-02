@@ -12,29 +12,41 @@ import qualified Data.Text                 as T
 import           Data.Text.Encoding        (decodeUtf8, encodeUtf8)
 import           Network.HTTP.Client       (HttpException (..))
 import           Network.HTTP.Types.Header (hAuthorization)
-import           Network.Wreq
+import           Network.HTTP.Types.Status (statusCode)
+import           Network.HTTP.Simple
 
 import           Common
 import           Network.Hawk
 import qualified Network.Hawk.Client       as Hawk
 
-clientMain :: IO ()
-clientMain = void $ clientAuth creds uri -- `E.catch` handler
-  where
-    uri = "http://localhost:8000/resource/1?b=1&a=2"
-    creds = Hawk.Credentials "dh37fgj492je" sharedKey (HawkAlgo SHA256)
-    handler e@(StatusCodeException s _ _)
-      | s ^. statusCode == 401 = putStrLn "Unauthorized"
-      | otherwise              = throwIO e
+uri = "http://localhost:8000/resource/1?b=1&a=2"
+creds = Hawk.Credentials "dh37fgj492je" sharedKey (HawkAlgo SHA256)
+ext = Just "some-app-data"
+payload = PayloadInfo "" ""
 
-clientAuth :: Hawk.Credentials -> T.Text -> IO Bool
-clientAuth creds uri = do
-  hdr <- Hawk.header uri "GET" creds Nothing (Just "some-app-data")
-  let opts = defaults & header hAuthorization .~ [Hawk.hdrField hdr]
-  r <- getWith opts (T.unpack uri)
-  let body = r ^. responseBody
-  res <- Hawk.authenticate r creds (Hawk.hdrArtifacts hdr) (Just body) Hawk.ServerAuthorizationRequired
-  putStrLn $ (show $ r ^. responseStatus . statusCode) ++ ": "
-    ++ L8.unpack body
-    ++ (if isRight res then " (valid)" else " (invalid)")
-  return $ isRight res
+clientMain :: IO ()
+clientMain = do
+  (arts, req) <- Hawk.signWithPayload' creds ext payload uri
+  r <- httpLBS req
+
+  res <- Hawk.authenticate r creds arts
+         (Just $ getResponseBody r)
+         Hawk.ServerAuthorizationRequired
+
+  printResponse (isRight res) r
+
+printResponse :: Bool -> Response BL.ByteString -> IO ()
+printResponse valid r = putStrLn $ (show $ getResponseStatusCode r) ++ ": "
+                        ++ L8.unpack (getResponseBody r)
+                        ++ (if valid then " (valid)" else " (invalid)")
+
+clientMainSimple :: IO ()
+clientMainSimple = ((withHawk httpLBS) uri >>= printResponse True) `E.catches` handlers
+  where
+    withHawk = Hawk.withHawkPayload creds ext payload Hawk.ServerAuthorizationRequired
+    handlers = [E.Handler handleHTTP, E.Handler handleHawk]
+    handleHTTP e@(StatusCodeException s _ _)
+      | statusCode s == 401 = putStrLn "Unauthorized"
+      | otherwise           = throwIO e
+    handleHawk (Hawk.HawkServerAuthorizationException e)
+      = putStrLn "Invalid server response"

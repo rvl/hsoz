@@ -31,7 +31,7 @@ data HeaderArtifacts = HeaderArtifacts
   , chaPort      :: Maybe Int
   , chaResource  :: ByteString
   , chaHash      :: Maybe ByteString
-  , chaExt       :: Maybe ByteString -- fixme: this should be json value
+  , chaExt       :: Maybe ExtData
   , chaApp       :: Maybe Text -- ^ app id, for oz
   , chaDlg       :: Maybe Text -- ^ delegated-by app id, for oz
   } deriving Show

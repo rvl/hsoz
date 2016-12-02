@@ -220,7 +220,7 @@ authResultExp now c a _ (Left e)  = Left (AuthFailStaleTimeStamp e now c a)
 headerArtifacts :: HawkReq -> AuthorizationHeader -> HeaderArtifacts
 headerArtifacts HawkReq{..} AuthorizationHeader{..} =
   HeaderArtifacts hrqMethod hrqHost hrqPort hrqUrl
-    sahId sahTs sahNonce sahMac sahHash sahExt (fmap decodeUtf8 sahApp) sahDlg
+    sahId sahTs sahNonce sahMac sahHash sahExt sahApp sahDlg
 
 -- | Verifies the payload hash as a separate step after other things
 -- have been check. This is useful when the request body is streamed
@@ -297,9 +297,9 @@ data AuthorizationHeader = AuthorizationHeader
   , sahNonce :: ByteString
   , sahMac   :: ByteString
   , sahHash  :: Maybe ByteString -- ^ optional payload hash
-  , sahExt   :: Maybe ByteString -- ^ optional extra data to verify
-  , sahApp   :: Maybe ByteString -- ^ optional oz application id
-  , sahDlg   :: Maybe ByteString -- ^ optional oz delegate
+  , sahExt   :: Maybe ExtData    -- ^ optional extra data to verify
+  , sahApp   :: Maybe Text       -- ^ optional oz application id
+  , sahDlg   :: Maybe Text       -- ^ optional oz delegate
   } deriving Show
 
 parseServerAuthorizationHeader :: ByteString -> AuthResult' AuthorizationHeader
@@ -324,7 +324,8 @@ serverAuthHeader m = do
   mac <- authAttr m "mac"
   return $ AuthorizationHeader id ts nonce mac
     (authAttrMaybe m "hash") (authAttrMaybe m "ext")
-    (authAttrMaybe m "app") (authAttrMaybe m "dlg")
+    (decodeUtf8 <$> authAttrMaybe m "app")
+    (decodeUtf8 <$> authAttrMaybe m "dlg")
 
 ----------------------------------------------------------------------------
 -- Bewit parsing

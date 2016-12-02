@@ -87,9 +87,9 @@ data HeaderArtifacts = HeaderArtifacts
   , shaNonce     :: ByteString
   , shaMac       :: ByteString -- ^ Entire header hash
   , shaHash      :: Maybe ByteString -- ^ Payload hash
-  , shaExt       :: Maybe ByteString
+  , shaExt       :: Maybe ExtData
   , shaApp       :: Maybe Text
-  , shaDlg       :: Maybe ByteString
+  , shaDlg       :: Maybe Text
   } deriving (Show, Eq)
 
 -- | A user-supplied callback to get credentials from a client

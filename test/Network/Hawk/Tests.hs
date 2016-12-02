@@ -100,7 +100,6 @@ clientCreds i (Server.Credentials k a) = Client.Credentials i k a
 
 -- fixme: there's possibly a case for merging these two types
 -- server artifacts have header mac and client id
--- dlg is text/bytestring
 clientHeaderArtifacts :: Server.HeaderArtifacts -> Client.HeaderArtifacts
 clientHeaderArtifacts Server.HeaderArtifacts{..} = Client.HeaderArtifacts
   { chaTimestamp = shaTimestamp
@@ -112,7 +111,7 @@ clientHeaderArtifacts Server.HeaderArtifacts{..} = Client.HeaderArtifacts
   , chaHash      = shaHash
   , chaExt       = shaExt
   , chaApp       = shaApp
-  , chaDlg       = decodeUtf8 <$> shaDlg
+  , chaDlg       = shaDlg
   -- , shaId        :: ClientId
   -- , shaMac       :: ByteString
   }

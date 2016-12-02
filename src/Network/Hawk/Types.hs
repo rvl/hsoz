@@ -2,6 +2,7 @@
 
 module Network.Hawk.Types
        ( ClientId
+       , ExtData
        , Key(..)
        , ContentType
        , PayloadInfo(..)
@@ -18,6 +19,10 @@ import           Network.Hawk.Algo
 -- | Identifies a particular client so that their credentials can be
 -- looked up.
 type ClientId = Text
+
+-- | Extension data included in verification hash. This can be
+-- anything or nothing, depending on what the application needs.
+type ExtData = ByteString
 
 ----------------------------------------------------------------------------
 
