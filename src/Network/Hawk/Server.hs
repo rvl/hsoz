@@ -81,7 +81,7 @@ instance Default AuthReqOpts where
   def = AuthReqOpts Nothing Nothing Nothing "bewit" def
 
 instance Default AuthOpts where
-  def = AuthOpts (\x t n -> True) 60 0
+  def = AuthOpts (\x t n -> return True) 60 0
 
 -- | Checks the @Authorization@ header of a 'Network.Wai.Request' and
 -- (optionally) a payload. The header will be parsed and verified with
@@ -202,21 +202,23 @@ authenticate opts getCreds req@HawkReq{..} = do
   case parseServerAuthorizationHeader hrqAuthorization of
     Right sah@AuthorizationHeader{..} -> do
       creds <- getCreds sahId
-      return $ case creds of
-        Right creds' -> authenticate' now opts creds' req sah
-        Left e -> Left (AuthFailUnauthorized e Nothing (Just (headerArtifacts req sah)))
+      case creds of
+        Right creds' -> do
+          nonce <- liftIO $ saCheckNonce opts (scKey (fst creds')) sahTs sahNonce
+          return $ authenticate' now opts creds' nonce req sah
+        Left e -> return $ Left (AuthFailUnauthorized e Nothing (Just (headerArtifacts req sah)))
     Left err -> return $ Left err
 
-authenticate' :: POSIXTime -> AuthOpts -> (Credentials, t)
+authenticate' :: POSIXTime -> AuthOpts -> (Credentials, t) -> Bool
               -> HawkReq -> AuthorizationHeader -> AuthResult t
-authenticate' now opts (creds, t) hrq@HawkReq{..} sah@AuthorizationHeader{..} = do
+authenticate' now opts (creds, t) nonce hrq@HawkReq{..} sah@AuthorizationHeader{..} = do
   let arts = headerArtifacts hrq sah
       doCheck = authResult creds arts t
       doCheckExp = authResultExp now creds arts t
       mac = serverMac creds arts HawkHeader
   if mac `constEqBytes` sahMac then do
     doCheck $ checkPayloadHash (scAlgorithm creds) sahHash hrqPayload
-    doCheck $ checkNonce (saCheckNonce opts) (scKey creds) sahNonce sahTs
+    doCheck $ checkNonce nonce
     doCheckExp $ checkExpiration now (saTimestampSkew opts) sahTs
     doCheck $ Right ()
     else Left (AuthFailUnauthorized "Bad mac" (Just creds) (Just arts))
@@ -291,13 +293,9 @@ timestampMessage e now creds = hawkHeaderError e parts
             , ("tsm", calculateTsMac (scAlgorithm creds) now)
             ]
 
--- | User-supplied nonce validation function.
-type NonceFunc = Key -> POSIXTime -> Nonce -> Bool
-type Nonce = ByteString
-
-checkNonce :: NonceFunc -> Key -> Nonce -> POSIXTime -> Either String ()
-checkNonce nonceFunc key nonce ts = if nonceFunc key ts nonce then Right ()
-                                    else Left "Invalid nonce"
+checkNonce :: Bool -> Either String ()
+checkNonce True  = Right ()
+checkNonce False = Left "Invalid nonce"
 
 checkExpiration :: POSIXTime -> NominalDiffTime -> POSIXTime -> Either String ()
 checkExpiration now skew ts = if abs (ts - now) <= skew then Right ()

@@ -10,6 +10,8 @@ module Network.Hawk.Server.Types
   , Credentials(..)
   , CredentialsFunc
   , HawkReq(..)
+  , NonceFunc
+  , Nonce
   , module Network.Hawk.Types
   ) where
 
@@ -76,3 +78,7 @@ data Credentials = Credentials
 -- | A user-supplied callback to get credentials from a client
 -- identifier.
 type CredentialsFunc m t = ClientId -> m (Either String (Credentials, t))
+
+-- | User-supplied nonce validation function.
+type NonceFunc = Key -> POSIXTime -> Nonce -> IO Bool
+type Nonce = ByteString

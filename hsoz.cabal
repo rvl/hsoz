@@ -32,6 +32,7 @@ library
                      , Network.Hawk
                      , Network.Hawk.Types
                      , Network.Hawk.Server
+                     , Network.Hawk.Server.Nonce
                      , Network.Hawk.Server.Types
                      , Network.Hawk.Middleware
                      , Network.Hawk.Client
@@ -65,6 +66,7 @@ library
                      , either
                      , errors
                      , exceptions
+                     , hashable
                      , http-client >= 0.4 && < 0.5
                      , http-types
                      , lens
@@ -77,6 +79,7 @@ library
                      , text
                      , time
                      , transformers
+                     , unordered-containers
                      , uri-bytestring
                      , vault
                      , wai

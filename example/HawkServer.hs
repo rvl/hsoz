@@ -19,17 +19,20 @@ import           Network.Wai.Handler.Warp
 import           Common
 import           Network.Hawk.Server.Types
 import qualified Network.Hawk.Server       as Hawk
+import qualified Network.Hawk.Server.Nonce as Hawk
 
 serverMain :: IO ()
-serverMain = run 8000 app
+serverMain = do
+  opts <- Hawk.nonceOptsReq 60
+  run 8000 (app opts)
 
 auth :: ClientId -> IO (Either String (Credentials, Text))
 auth id = return $ Right (Credentials sharedKey (HawkAlgo SHA256), "Steve")
 
-app :: Application
-app req respond = do
+app :: Hawk.AuthReqOpts -> Application
+app opts req respond = do
   payload <- lazyRequestBody req
-  res <- Hawk.authenticateRequest def auth req (Just payload)
+  res <- Hawk.authenticateRequest opts auth req (Just payload)
   respond $ case res of
     Right (Hawk.AuthSuccess creds artifacts user) -> let
       ext = decodeUtf8 <$> haExt artifacts
