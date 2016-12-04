@@ -142,7 +142,7 @@ loadApp aid = return $ case find ((== aid) . ozAppId) apps of
 -- can be used to access Oz.
 printCurl :: OzApp -> Text -> Maybe Value -> IO Text
 printCurl (OzApp aid _ _ key algo) url mdata = do
-  auth <- Hawk.headerOz (TL.toStrict url) "POST" creds Nothing Nothing aid Nothing
+  auth <- Hawk.headerOz (TL.toStrict url) "POST" creds Nothing 0 Nothing aid Nothing
   let authHeader = decodeUtf8 . BL.fromStrict . fmtHeader . mkHeader $ auth
   return $ "curl -i -X POST " <> dataArg <> "-H 'Content-Type: application/json' -H '" <> authHeader <> "' " <> url
   where

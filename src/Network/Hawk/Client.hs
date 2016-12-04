@@ -10,15 +10,13 @@ module Network.Hawk.Client
        , headerOz
        , getBewit
        , authenticate
-       , sign, signWithPayload
-       , sign', signWithPayload'
+       , sign
        , withHawk
        , withHawkPayload
        , ServerAuthorizationCheck(..)
        , Credentials(..)
        , Header(..)
        , Authorization
-       , HeaderArtifacts
        , module Network.Hawk.Types
        , HawkException(..)
        ) where
@@ -43,7 +41,7 @@ import           Data.Time.Clock           (NominalDiffTime)
 import           Data.Time.Clock.POSIX
 import           Network.HTTP.Types.Header (HeaderName, hContentType, hWWWAuthenticate, hAuthorization, ResponseHeaders)
 import           Network.HTTP.Types.Method (Method)
-import           Network.HTTP.Types.Status (statusCode)
+import           Network.HTTP.Types.Status (Status, statusCode)
 import           Network.HTTP.Types.URI    (extractPath)
 import           Network.HTTP.Client       (Response, responseHeaders)
 import           Network.HTTP.Client       (Request, requestHeaders, requestBody, getUri, method, secure)
@@ -53,7 +51,7 @@ import           URI.ByteString            (authorityHost, authorityPort,
                                             parseURI, portNumber, uriAuthority)
 import           Data.Typeable             (Typeable)
 import           Control.Exception         (Exception, throwIO)
-import           Control.Monad.Catch       as E (MonadThrow(..), MonadCatch(..))
+import           Control.Monad.Catch       as E (MonadThrow(..), MonadCatch(..), handle)
 import           Control.Monad             (join)
 
 import           Network.Hawk.Common
@@ -68,28 +66,49 @@ header :: Text -- ^ The request URL
        -> Method -- ^ The request method
        -> Credentials -- ^ Credentials used to generate the header
        -> Maybe PayloadInfo -- ^ Optional request payload
+       -> NominalDiffTime -- ^ Time offset to sync with server time
        -> Maybe ExtData -- ^ @ext@ data
        -> IO Header
-header url method creds payload ext = headerBase url method creds payload ext Nothing Nothing
+header url method creds payload skew ext =
+  headerBase url method creds payload skew ext Nothing Nothing
 
 -- | Generates the Hawk authentication header for an Oz request. Oz
 -- requires another attribute -- the application id. It also has an
 -- optional delegated-by attribute, which is the application id of the
 -- application the credentials were directly issued to.
-headerOz :: Text -> Method -> Credentials -> Maybe PayloadInfo -> Maybe ExtData
-         -> Text -> Maybe Text -> IO Header
-headerOz url method creds payload ext app dlg = headerBase url method creds payload ext (Just app) dlg
+headerOz :: Text -> Method -> Credentials -> Maybe PayloadInfo -> NominalDiffTime
+         -> Maybe ExtData -> Text -> Maybe Text -> IO Header
+headerOz url method creds payload skew ext app dlg =
+  headerBase url method creds payload skew ext (Just app) dlg
 
-headerBase :: Text -> Method -> Credentials -> Maybe PayloadInfo -> Maybe ExtData
-           -> Maybe Text -> Maybe Text -> IO Header
-headerBase url method creds payload ext app dlg = do
+headerBase :: Text -> Method -> Credentials -> Maybe PayloadInfo -> NominalDiffTime
+           -> Maybe ExtData -> Maybe Text -> Maybe Text -> IO Header
+headerBase url method creds payload skew ext app dlg = do
   now <- getPOSIXTime
   nonce <- genNonce
-  let hash = calculatePayloadHash (ccAlgorithm creds) <$> payload
-      mac  = clientMac HawkHeader creds arts
-      arts = clientHeaderArtifacts now nonce method (encodeUtf8 url) hash ext app dlg (ccId creds) mac
-      auth = clientHawkAuth arts
-  return $ Header auth arts
+  return . header' $ HeaderParams url method creds payload ext app dlg skew now nonce
+
+data HeaderParams = HeaderParams
+  { hpUrl :: Text
+  , hpMethod :: Method
+  , hpCredentials :: Credentials
+  , hpPayload :: Maybe PayloadInfo
+  , hpExt :: Maybe ExtData
+  , hpApp :: Maybe Text
+  , hpDlg :: Maybe Text
+  , hpTimeOffset :: NominalDiffTime
+  , hpTimestamp :: POSIXTime
+  , hpNonce :: ByteString
+  } deriving Show
+
+header' :: HeaderParams -> Header
+header' HeaderParams{..} = Header auth arts
+  where
+    hash = calculatePayloadHash (ccAlgorithm hpCredentials) <$> hpPayload
+    mac  = clientMac HawkHeader hpCredentials arts
+    arts = clientHeaderArtifacts ts hpNonce hpMethod (encodeUtf8 hpUrl) hash hpExt hpApp hpDlg (ccId hpCredentials) mac
+    auth = clientHawkAuth arts
+    ts = hpTimestamp + hpTimeOffset
 
 clientHeaderArtifacts :: POSIXTime -> ByteString -> Method -> ByteString
                       -> Maybe ByteString -> Maybe ByteString
@@ -136,8 +155,8 @@ splitUrl url = SplitURL <$> host <*> pure port <*> path
     path = fmap (const (extractPath url)) p
 
 genNonce :: IO ByteString
-genNonce = takeRandom <$> getSystemDRG
-  where takeRandom g = fst $ withRandomBytes g 10 B64.encode
+genNonce = takeRandom 10 <$> getSystemDRG
+  where takeRandom n g = fst $ withRandomBytes g n (b64url :: ByteString -> ByteString)
 
 -- | Whether the client wants to check the received
 -- @Server-Authorization@ header depends on the application.
@@ -240,67 +259,108 @@ bewitString cid exp mac ext = b64url (S8.intercalate "\\" parts)
 
 ----------------------------------------------------------------------------
 
-sign :: MonadIO m => Credentials -> Maybe ExtData
-     -> Request -> m Request
-sign creds ext req = snd <$> signRequest creds ext Nothing req
-
-sign' :: MonadIO m => Credentials -> Maybe ExtData
-     -> Request -> m (HeaderArtifacts, Request)
-sign' creds ext req = signRequest creds ext Nothing req
-
-signWithPayload :: MonadIO m => Credentials -> Maybe ExtData -> PayloadInfo
-                -> Request -> m Request
-signWithPayload creds ext payload req = snd <$> signWithPayload' creds ext payload req
-
-signWithPayload' :: MonadIO m => Credentials -> Maybe ExtData -> PayloadInfo
-                 -> Request -> m (HeaderArtifacts, Request)
-signWithPayload' creds ext payload req = signRequest creds ext (Just payload) req
-
-signRequest :: MonadIO m => Credentials -> Maybe ExtData -> Maybe PayloadInfo
-            -> Request -> m (HeaderArtifacts, Request)
-signRequest creds ext payload req = do
+-- | Modifies a 'Wai.Request' to include the @Authorization@ header
+-- necessary for Hawk.
+sign :: MonadIO m => Credentials -- ^ Credentials for signing
+     -> Maybe ExtData -- ^ Optional application-specific data.
+     -> Maybe PayloadInfo -- ^ Optional payload to hash
+     -> NominalDiffTime -- ^ Time offset to sync with server time
+     -> Request -- ^ The request to sign
+     -> m (HeaderArtifacts, Request)
+sign creds ext payload skew req = do
   let uri = T.pack . show . getUri $ req
-  hdr <- liftIO $ header uri (method req) creds payload ext
+  hdr <- liftIO $ header uri (method req) creds payload skew ext
   return $ (hdrArtifacts hdr, addAuth hdr req)
 
 addAuth :: Header -> Request -> Request
 addAuth hdr req = req { requestHeaders = (auth:requestHeaders req) }
   where auth = (hAuthorization, hdrField hdr)
 
+-- | Client exceptions specific to Hawk.
 data HawkException = HawkServerAuthorizationException String
-                   | HawkStaleTimestampException
+  -- ^ The returned @Server-Authorization@ header did not validate.
   deriving (Show, Typeable)
 instance Exception HawkException
 
-withHawk :: (MonadIO m, MonadThrow m, MonadCatch m) =>
-            Credentials -> Maybe ExtData -> ServerAuthorizationCheck
-         -> (Request -> m (Response body)) -> Request -> m (Response body)
-withHawk creds ext ck http req = do
-  (arts, req') <- sign' creds ext req
-  doSignedRequest creds arts ck http req'
+-- | Signs and executes a request, then checks the server's
+-- response. Handles retrying of requests if the server and client
+-- clocks are out of sync.
+--
+-- A 'HawkException' will be thrown if the server's response fails to
+-- authenticate.
+withHawk :: (MonadIO m, MonadCatch m) =>
+            Credentials       -- ^ Credentials for signing the request.
+         -> Maybe ExtData     -- ^ Optional application-specific data.
+         -> ServerAuthorizationCheck -- ^ Whether to verify the server's response.
+         -> (Request -> m (Response body)) -- ^ The action to run with the request.
+         -> Request           -- ^ The request to sign.
+         -> m (Response body) -- ^ The result of the action.
+withHawk creds ext ck http req = withHawkBase creds ext Nothing ck http req
 
-withHawkPayload :: (MonadIO m, MonadThrow m, MonadCatch m) =>
+withHawkPayload :: (MonadIO m, MonadCatch m) =>
                    Credentials -> Maybe ExtData -> PayloadInfo
                 -> ServerAuthorizationCheck
                 -> (Request -> m (Response body)) -> Request -> m (Response body)
-withHawkPayload creds ext payload ck http req = do
-  (arts, req') <- signWithPayload' creds ext payload req
-  doSignedRequest creds arts ck http req'
+withHawkPayload creds ext payload ck http req = withHawkBase creds ext (Just payload) ck http req
 
-doSignedRequest :: (MonadIO m, MonadThrow m, MonadCatch m) =>
-                   Credentials -> HeaderArtifacts -> ServerAuthorizationCheck
-                -> (Request -> m (Response body)) -> Request -> m (Response body)
-doSignedRequest creds arts ck http req = do
-  r <- http req
+-- | Makes a Hawk signed request. If the server responds saying "Stale
+-- timestamp", then retry using an adjusted timestamp.
+withHawkBase :: (MonadIO m, MonadThrow m, MonadCatch m) =>
+                Credentials -> Maybe ExtData -> Maybe PayloadInfo
+             -> ServerAuthorizationCheck
+             -> (Request -> m (Response body)) -> Request -> m (Response body)
+withHawkBase creds ext payload ck http req = do
+  let handle = makeExpiryHandler creds req
+  r <- handle $ doSignedRequest 0 creds ext payload ck http req
+  case r of
+    Right res -> return res
+    Left ts -> do
+      now <- liftIO getPOSIXTime
+      doSignedRequest (now - ts) creds ext payload ck http req
+
+
+makeExpiryHandler :: MonadCatch m => Credentials -> Request
+                  -> m a -> m (Either NominalDiffTime a)
+makeExpiryHandler creds req = E.handle handler . fmap Right
+  where
+    handler e@(StatusCodeException s h _) =
+      case wasStale req creds h s of
+        Just ts -> return $ Left ts
+        Nothing -> throwM e
+
+-- | Signs a request, runs it, then authenticates the response.
+doSignedRequest :: (MonadIO m, MonadThrow m) =>
+                    NominalDiffTime
+                -> Credentials -> Maybe ExtData -> Maybe PayloadInfo
+                -> ServerAuthorizationCheck
+                -> (Request -> m (Response body)) -> Request
+                -> m (Response body)
+doSignedRequest skew creds ext payload ck http req = do
+  (arts, req') <- sign creds ext payload skew req
+  resp <- http req'
+  auth <- authResponse creds arts ck resp
+  case auth of
+    Left e -> throwM $ HawkServerAuthorizationException e
+    Right _ -> return resp
+
+-- | Authenticates the server's response if required.
+authResponse :: MonadIO m => Credentials -> HeaderArtifacts
+             -> ServerAuthorizationCheck
+             -> Response body -> m (Either String ())
+authResponse creds arts ck resp = do
   let body = Nothing -- Just $ getResponseBody r
   case ck of
-    ServerAuthorizationRequired -> do
-      res <- liftIO $ authenticate r creds arts body ck
-      case res of
-        Left e -> throwM $ HawkServerAuthorizationException e
-        Right () -> return r
-    ServerAuthorizationNotRequired -> return r
+    ServerAuthorizationRequired ->
+      liftIO $ authenticate resp creds arts body ck
+    ServerAuthorizationNotRequired -> return (Right ())
 
+wasStale :: Request -> Credentials -> ResponseHeaders -> Status -> Maybe NominalDiffTime
+wasStale req creds hdrs s
+  | secure req && statusCode s == 401 = hawkTs creds hdrs
+  | otherwise                         = Nothing
+
+-- | Gets the WWW-Authenticate header value and returns the server
+-- timestamp, if the response contains an authenticated timestamp.
 hawkTs :: Credentials -> ResponseHeaders -> Maybe POSIXTime
 hawkTs creds = join . fmap parseTs . wwwAuthenticate
   where

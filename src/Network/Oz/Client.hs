@@ -40,7 +40,7 @@ import           Network.Oz.Types
 -- authorization header for making authenticated Oz requests.
 header :: Text -> Method -> OzSealedTicket -> IO Hawk.Header
 -- fixme: support hawk header options
-header uri method t@OzSealedTicket{..} = Hawk.header uri method creds Nothing Nothing
+header uri method t@OzSealedTicket{..} = Hawk.header uri method creds Nothing 0 Nothing
   where
     creds = ticketCreds t
     -- fixme: app and dlg need to get passed to header
