@@ -55,7 +55,7 @@ makeCreds i = (cc, \i -> return sc, user)
 test01 = testCase "generates a header then successfully parses it" $ do
   let (creds, credsFunc, user) = makeCreds "123456"
       ext = Just "some-app-data"
-  hdr <- Client.header "http://example.com:8080/resource/4?filter=a" "GET" creds Nothing ext
+  hdr <- Client.header "http://example.com:8080/resource/4?filter=a" "GET" creds Nothing 0 ext
   let hrq = def
             { hrqUrl = "/resource/4?filter=a"
             , hrqHost = "example.com"
@@ -73,7 +73,7 @@ test02 = testCase "generates a header then successfully parses it (WAI request)"
   let (creds, credsFunc, user) = makeCreds "123456"
       ext = Just "some-app-data"
       payload = PayloadInfo "text/plain;x=y" "some not so random text"
-  hdr <- Client.header "http://example.com:8080/resource/4?filter=a" "POST" creds (Just payload) ext
+  hdr <- Client.header "http://example.com:8080/resource/4?filter=a" "POST" creds (Just payload) 0 ext
 
   -- Server verifies client request
   let req = mockRequest "POST" "/resource/4" "?filter=a" "example.com:8080" payload [("authorization", Client.hdrField hdr)]
@@ -120,7 +120,7 @@ test03 = testCase "generates a header then successfully parses it (absolute requ
   let (creds, credsFunc, user) = makeCreds "123456"
       ext = Just "some-app-data"
       payload = PayloadInfo "text/plain;x=y" "some not so random text"
-  hdr <- Client.header "http://example.com:8080/resource/4?filter=a" "POST" creds (Just payload) ext
+  hdr <- Client.header "http://example.com:8080/resource/4?filter=a" "POST" creds (Just payload) 0 ext
   let hrq = def
             { hrqMethod = "POST"
             , hrqUrl = "/resource/4?filter=a" -- fixme: not absolute
@@ -151,7 +151,7 @@ test04 = testCase "generates a header then fails to parse it (missing server hea
   let (creds, credsFunc, user) = makeCreds "123456"
       ext = Just "some-app-data"
       payload = PayloadInfo "text/plain;x=y" "some not so random text"
-  hdr <- Client.header "http://example.com:8080/resource/4?filter=a" "POST" creds (Just payload) ext
+  hdr <- Client.header "http://example.com:8080/resource/4?filter=a" "POST" creds (Just payload) 0 ext
   let hrq = def
             { hrqMethod = "POST"
             , hrqUrl = "/resource/4?filter=a" -- fixme: not absolute
@@ -184,7 +184,7 @@ test05 = testCase "generates a header then successfully parse it then validate p
       payload = PayloadInfo "text/plain" "hola!"
       payload2 = PayloadInfo "text/html" "hola!"
       payload3 = PayloadInfo "text/plain" "hello!"
-  hdr <- Client.header "http://example.com:8080/resource/4?filter=a" "GET" creds (Just payload) ext
+  hdr <- Client.header "http://example.com:8080/resource/4?filter=a" "GET" creds (Just payload) 0 ext
   let hrq = def
             { hrqUrl = "/resource/4?filter=a"
             , hrqHost = "example.com"
@@ -211,7 +211,7 @@ test06 = testCase "generates a header then successfully parses and validates pay
       payload = PayloadInfo "" "hola!"
       payload2 = PayloadInfo "text/plain" "hola!"
       payload3 = PayloadInfo "" "hello!"
-  hdr <- Client.header "http://example.com:8080/resource/4?filter=a" "GET" creds (Just payload) ext
+  hdr <- Client.header "http://example.com:8080/resource/4?filter=a" "GET" creds (Just payload) 0 ext
   let hrq = def
             { hrqUrl = "/resource/4?filter=a"
             , hrqHost = "example.com"
@@ -240,7 +240,7 @@ test07 = testCase "generates a header then successfully parse it (app)" $ do
       ext = Just "some-app-data"
       app = "asd23ased"
   hdr <- Client.headerOz "http://example.com:8080/resource/4?filter=a" "GET"
-    creds Nothing ext app Nothing
+    creds Nothing 0 ext app Nothing
   let hrq = def
             { hrqUrl = "/resource/4?filter=a"
             , hrqHost = "example.com"
@@ -263,7 +263,7 @@ test08 = testCase "generates a header then successfully parse it (app, dlg)" $ d
       app = "asd23ased"
       dlg = "23434szr3q4d"
   hdr <- Client.headerOz "http://example.com:8080/resource/4?filter=a" "GET"
-    creds Nothing ext app (Just dlg)
+    creds Nothing 0 ext app (Just dlg)
   let hrq = def
             { hrqUrl = "/resource/4?filter=a"
             , hrqHost = "example.com"
@@ -283,7 +283,7 @@ test08 = testCase "generates a header then successfully parse it (app, dlg)" $ d
 test09 = testCase "generates a header for one resource then fail to authenticate another" $ do
   let (creds, credsFunc, user) = makeCreds "123456"
       ext = Just "some-app-data"
-  hdr <- Client.header "http://example.com:8080/resource/4?filter=a" "GET" creds Nothing ext
+  hdr <- Client.header "http://example.com:8080/resource/4?filter=a" "GET" creds Nothing 0 ext
   let hrq = def
             { hrqUrl = "/something/else"
             , hrqHost = "example.com"
