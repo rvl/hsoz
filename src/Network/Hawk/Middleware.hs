@@ -43,7 +43,7 @@ hawkAuth opts vp c = genHawkAuth $ \req -> do
 -- | Authenticates @GET@ requests with the Hawk bewit scheme,
 -- according to the provided options and credentials.
 bewitAuth :: Hawk.AuthReqOpts -> Hawk.CredentialsFunc IO t -> Middleware
-bewitAuth opts creds = genHawkAuth $ Hawk.authenticateBewit opts creds
+bewitAuth opts creds = genHawkAuth $ Hawk.authenticateBewitRequest opts creds
 
 genHawkAuth :: (Request -> IO (Hawk.AuthResult t)) -> Application -> Application
 genHawkAuth auth app req respond = do

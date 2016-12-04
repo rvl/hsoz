@@ -33,13 +33,18 @@ import           Control.Monad.IO.Class    (MonadIO)
 import           Network.Wai               (Request)
 
 import Network.Hawk.Types
-import Network.Hawk.Server (authenticateBewit, CredentialsFunc, AuthReqOpts, AuthResult)
+import Network.Hawk.Server (authenticateBewitRequest, authenticateBewit, CredentialsFunc, AuthReqOpts, AuthOpts, AuthResult, HawkReq)
 import Network.Hawk.Middleware (bewitAuth)
 import Network.Hawk.Client (getBewit)
 
--- | See 'Network.Hawk.Server.authenticateBewit'.
-authenticate :: MonadIO m => AuthReqOpts -> CredentialsFunc m t
+-- | See 'Network.Hawk.Server.authenticateBewitRequest'.
+authenticateRequest :: MonadIO m => AuthReqOpts -> CredentialsFunc m t
              -> Request -> m (AuthResult t)
+authenticateRequest = authenticateBewitRequest
+
+-- | See 'Network.Hawk.Server.authenticateBewit'.
+authenticate :: MonadIO m => AuthOpts -> CredentialsFunc m t
+             -> HawkReq -> m (AuthResult t)
 authenticate = authenticateBewit
 
 -- | See 'Network.Hawk.Middleware.bewitAuth'.

@@ -6,8 +6,9 @@
 module Network.Hawk.Server
        ( authenticateRequest
        , authenticate
-       , authenticateBewit
        , authenticatePayload
+       , authenticateBewitRequest
+       , authenticateBewit
        , HawkReq(..)
        , header
        , AuthReqOpts(..)
@@ -58,15 +59,22 @@ data AuthReqOpts = AuthReqOpts
   { saHostHeaderName :: Maybe (CI ByteString) -- ^ Alternate name for @Host@ header
   , saHost           :: Maybe ByteString -- ^ Overrides the URL host
   , saPort           :: Maybe ByteString -- ^ Overrides the URL port
-  , saBewitParam     :: ByteString -- ^ Query parameter for bewit authentication
+  , saBewitParam     :: ByteString
+    -- ^ Query parameter for bewit authentication. Defaults to @"bewit"@.
   , saOpts           :: AuthOpts  -- ^ Parameters for 'authenticate'
   }
 
 -- | Bundle of parameters for 'authenticate'.
 data AuthOpts = AuthOpts
   { saCheckNonce          :: NonceFunc
+    -- ^ Nonce validation function. Defaults to a function which
+    -- always returns @True@.
   , saTimestampSkew       :: NominalDiffTime
-  , saIronLocaltimeOffset :: NominalDiffTime -- fixme: check this is still needed
+    -- ^ Number of seconds of permitted clock skew for incoming
+    -- timestamps. Defaults to 60 seconds.  Provides a +/- skew which
+    -- means actual allowed window is double the number of seconds.
+  , saLocaltimeOffset :: NominalDiffTime
+    -- ^ Offsets the local time. Defaults to 0.
   }
 
 instance Default AuthReqOpts where
@@ -90,7 +98,7 @@ authenticateRequest opts creds req body = do
     then return $ Left (AuthFailBadRequest "Missing Authorization header" Nothing)
     else authenticate (saOpts opts) creds hreq
 
-authenticateBewit' opts (creds, t) req bewit
+authenticateBewit' (creds, t) req bewit
   | mac `constEqBytes` (bewitMac bewit) = Right (AuthSuccess creds arts t)
   | otherwise = Left (AuthFailUnauthorized "Bad mac" (Just creds) (Just arts))
   where
@@ -102,23 +110,29 @@ bewitArtifacts HawkReq{..} Bewit{..} =
   HeaderArtifacts hrqMethod hrqHost hrqPort hrqBewitlessUrl
     "" bewitExp "" "" Nothing (Just bewitExt) Nothing Nothing
 
--- | Checks the @Authorization@ header of a request according to the
--- "bewit" scheme. See "Network.Hawk.URI" for a description of that
--- scheme.
-authenticateBewit :: MonadIO m => AuthReqOpts -> CredentialsFunc m t
-                  -> Request -> m (AuthResult t)
-authenticateBewit opts getCreds req = do
-  now <- liftIO getPOSIXTime
+-- | Checks the @Authorization@ header of a 'Wai.Request' according to
+-- the "bewit" scheme. See "Network.Hawk.URI" for a description of
+-- that scheme.
+authenticateBewitRequest :: MonadIO m => AuthReqOpts -> CredentialsFunc m t
+                         -> Request -> m (AuthResult t)
+authenticateBewitRequest opts creds req =
+  authenticateBewit (saOpts opts) creds (hawkReq opts req Nothing)
+
+-- | Checks the @Authorization@ header of a request ('HawkReq')
+-- according to the "bewit" scheme.
+authenticateBewit :: MonadIO m => AuthOpts -> CredentialsFunc m t
+                  -> HawkReq -> m (AuthResult t)
+authenticateBewit opts getCreds hrq@HawkReq{..} = do
+  now <- getServerTime opts
   case checkBewit hrq now of
     Right bewit -> do
       mcreds <- mapLeft unauthorized <$> getCreds (bewitId bewit)
       return $ case mcreds of
-        Right creds -> authenticateBewit' opts creds hrq bewit
+        Right creds -> authenticateBewit' creds hrq bewit
         Left e -> undefined
     Left e -> return (Left e)
 
   where
-    hrq = hawkReq opts req Nothing
     checkBewit :: HawkReq -> POSIXTime -> Either AuthFail Bewit
     checkBewit HawkReq{..} now = do
       encBewit <- checkEmpty hrqBewit
@@ -148,6 +162,9 @@ authenticateBewit opts getCreds req = do
     unauthorized e = AuthFailUnauthorized e Nothing Nothing
     badRequest e = AuthFailBadRequest e Nothing
 
+-- | Current time, with the server time offset applied.
+getServerTime :: MonadIO m => AuthOpts -> m POSIXTime
+getServerTime AuthOpts{..} = (+ saLocaltimeOffset) <$> liftIO getPOSIXTime
 
 hawkReq :: AuthReqOpts -> Request -> Maybe BL.ByteString -> HawkReq
 hawkReq AuthReqOpts{..} req body = HawkReq
@@ -181,7 +198,7 @@ hawkReq AuthReqOpts{..} req body = HawkReq
 -- not supplied, it can be verified later with 'authenticatePayload'.
 authenticate :: MonadIO m => AuthOpts -> CredentialsFunc m t -> HawkReq -> m (AuthResult t)
 authenticate opts getCreds req@HawkReq{..} = do
-  now <- liftIO getPOSIXTime
+  now <- getServerTime opts
   case parseServerAuthorizationHeader hrqAuthorization of
     Right sah@AuthorizationHeader{..} -> do
       creds <- getCreds sahId
