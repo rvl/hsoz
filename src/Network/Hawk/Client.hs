@@ -86,29 +86,19 @@ headerBase :: Text -> Method -> Credentials -> Maybe PayloadInfo -> NominalDiffT
 headerBase url method creds payload skew ext app dlg = do
   now <- getPOSIXTime
   nonce <- genNonce
-  return . header' $ HeaderParams url method creds payload ext app dlg skew now nonce
+  return $ header' url method creds payload skew ext app dlg now nonce
 
-data HeaderParams = HeaderParams
-  { hpUrl :: Text
-  , hpMethod :: Method
-  , hpCredentials :: Credentials
-  , hpPayload :: Maybe PayloadInfo
-  , hpExt :: Maybe ExtData
-  , hpApp :: Maybe Text
-  , hpDlg :: Maybe Text
-  , hpTimeOffset :: NominalDiffTime
-  , hpTimestamp :: POSIXTime
-  , hpNonce :: ByteString
-  } deriving Show
-
-header' :: HeaderParams -> Header
-header' HeaderParams{..} = Header auth arts
+header' :: Text -> Method -> Credentials -> Maybe PayloadInfo -> NominalDiffTime
+        -> Maybe ExtData -> Maybe Text -> Maybe Text
+        -> POSIXTime -> ByteString -> Header
+header' url method creds payload skew ext app dlg ts nonce = Header auth arts
   where
-    hash = calculatePayloadHash (ccAlgorithm hpCredentials) <$> hpPayload
-    mac  = clientMac HawkHeader hpCredentials arts
-    arts = clientHeaderArtifacts ts hpNonce hpMethod (encodeUtf8 hpUrl) hash hpExt hpApp hpDlg (ccId hpCredentials) mac
     auth = clientHawkAuth arts
-    ts = hpTimestamp + hpTimeOffset
+    arts = clientHeaderArtifacts ts' nonce method (encodeUtf8 url)
+           hash ext app dlg (ccId creds) mac
+    hash = calculatePayloadHash (ccAlgorithm creds) <$> payload
+    mac  = clientMac HawkHeader creds arts
+    ts'  = ts + skew
 
 clientHeaderArtifacts :: POSIXTime -> ByteString -> Method -> ByteString
                       -> Maybe ByteString -> Maybe ByteString

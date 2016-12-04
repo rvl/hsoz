@@ -23,9 +23,8 @@ data Credentials = Credentials
 -- | The result of Hawk header generation.
 data Header = Header
   { hdrField     :: Authorization  -- ^ Value of @Authorization@ header.
-  , hdrArtifacts :: HeaderArtifacts  -- ^ Not sure if this is needed by users.
+  , hdrArtifacts :: HeaderArtifacts  -- ^ The parameters used to generate the header.
   } deriving (Show, Generic)
-
 
 data SplitURL = SplitURL
   { urlHost :: ByteString
