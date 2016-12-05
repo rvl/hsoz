@@ -2,6 +2,10 @@
 
 -- | These are functions for checking authenticated requests and
 -- sending authenticated responses.
+--
+-- For an easy way to add Hawk authentication to a "Network.Wai"
+-- 'Network.Wai.Application', use the "Network.Hawk.Middleware"
+-- module.
 
 module Network.Hawk.Server
        ( authenticateRequest

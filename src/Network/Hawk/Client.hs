@@ -4,21 +4,28 @@
 
 -- | Functions for making Hawk-authenticated request headers and
 -- verifying responses from the server.
+--
+-- The easiest way to make authenticated requests is to use 'withHawk'
+-- with functions from the "Network.HTTP.Simple" module (from the
+-- @http-conduit@ package).
 
 module Network.Hawk.Client
-       ( header
+       ( -- * Higher-level API
+         withHawk
+       -- ** Types
+       , ServerAuthorizationCheck(..)
+       , HawkException(..)
+       , Credentials(..)
+       -- * Protocol functions
+       , sign
+       , authenticate
+       , header
        , headerOz
        , getBewit
-       , authenticate
-       , sign
-       , withHawk
-       , withHawkPayload
-       , ServerAuthorizationCheck(..)
-       , Credentials(..)
+       -- ** Types
        , Header(..)
        , Authorization
        , module Network.Hawk.Types
-       , HawkException(..)
        ) where
 
 import           Control.Monad.IO.Class    (MonadIO, liftIO)
@@ -67,7 +74,7 @@ header :: Text -- ^ The request URL
        -> Credentials -- ^ Credentials used to generate the header
        -> Maybe PayloadInfo -- ^ Optional request payload
        -> NominalDiffTime -- ^ Time offset to sync with server time
-       -> Maybe ExtData -- ^ @ext@ data
+       -> Maybe ExtData -- ^ Application-specific @ext@ data
        -> IO Header
 header url method creds payload skew ext =
   headerBase url method creds payload skew ext Nothing Nothing
@@ -76,8 +83,15 @@ header url method creds payload skew ext =
 -- requires another attribute -- the application id. It also has an
 -- optional delegated-by attribute, which is the application id of the
 -- application the credentials were directly issued to.
-headerOz :: Text -> Method -> Credentials -> Maybe PayloadInfo -> NominalDiffTime
-         -> Maybe ExtData -> Text -> Maybe Text -> IO Header
+headerOz :: Text -- ^ The request URL
+         -> Method -- ^ The request method
+         -> Credentials -- ^ Credentials used to generate the header
+         -> Maybe PayloadInfo -- ^ Optional request payload
+         -> NominalDiffTime -- ^ Time offset to sync with server time
+         -> Maybe ExtData -- ^ Application-specific @ext@ data
+         -> Text -- ^ Oz application identifier
+         -> Maybe Text -- ^ Oz delegated application
+         -> IO Header
 headerOz url method creds payload skew ext app dlg =
   headerBase url method creds payload skew ext (Just app) dlg
 
@@ -154,10 +168,14 @@ data ServerAuthorizationCheck = ServerAuthorizationNotRequired
                               | ServerAuthorizationRequired
                               deriving Show
 
--- | Validates the server response.
-authenticate :: Response body -> Credentials -> HeaderArtifacts
-             -> Maybe BL.ByteString -> ServerAuthorizationCheck
-             -> IO (Either String ())
+-- | Validates the server response from a signed request. If the
+-- payload body is provided, its hash will be checked.
+authenticate :: Response body -- ^ Response from server.
+             -> Credentials -- ^ Credentials used for signing the request.
+             -> HeaderArtifacts -- ^ The result of 'sign'.
+             -> Maybe BL.ByteString -- ^ Optional payload body from response.
+             -> ServerAuthorizationCheck -- ^ Whether a valid @Server-Authorization@ header is required.
+             -> IO (Either String ()) -- ^ Error message if authentication failed.
 authenticate r creds artifacts payload saCheck = do
   now <- getPOSIXTime
   return $ authenticate' r creds artifacts payload saCheck now
@@ -223,11 +241,18 @@ checkServerAuthorizationHeader creds arts _ now (Just sa) = do
 
 ----------------------------------------------------------------------------
 
--- | Generate a bewit value for a given URI.
-getBewit :: Credentials -> NominalDiffTime -> Maybe ExtData -> NominalDiffTime
-         -> ByteString -> IO (Maybe ByteString)
+-- | Generate a bewit value for a given URI. If the URI can't be
+-- parsed, @Nothing@ will be returned.
+--
+-- See "Network.Hawk.URI" for more information about bewits.
+getBewit :: Credentials -- ^ Credentials used to generate the bewit.
+         -> NominalDiffTime -- ^ Time-to-live (TTL) value.
+         -> Maybe ExtData -- ^ Optional application-specific data.
+         -> NominalDiffTime -- ^ Time offset to sync with server time.
+         -> ByteString -- ^ URI.
+         -> IO (Maybe ByteString) -- ^ Base-64 encoded bewit value.
 -- fixme: javascript version supports deconstructed parsed uri objects
--- fixme: not much point having two time interval arguments?
+-- fixme: not much point having two time interval arguments? Maybe just have a single expiry time argument.
 getBewit creds ttl ext offset uri = do
   exp <- fmap (+ (ttl + offset)) getPOSIXTime
   return $ encodeBewit creds <$> bewitArtifacts uri exp ext
@@ -281,11 +306,12 @@ instance Exception HawkException
 withHawk :: (MonadIO m, MonadCatch m) =>
             Credentials       -- ^ Credentials for signing the request.
          -> Maybe ExtData     -- ^ Optional application-specific data.
+         -> Maybe PayloadInfo -- ^ Optional payload to sign.
          -> ServerAuthorizationCheck -- ^ Whether to verify the server's response.
          -> (Request -> m (Response body)) -- ^ The action to run with the request.
          -> Request           -- ^ The request to sign.
          -> m (Response body) -- ^ The result of the action.
-withHawk creds ext ck http req = withHawkBase creds ext Nothing ck http req
+withHawk creds ext payload ck http req = withHawkBase creds ext payload ck http req
 
 withHawkPayload :: (MonadIO m, MonadCatch m) =>
                    Credentials -> Maybe ExtData -> PayloadInfo

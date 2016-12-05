@@ -21,7 +21,8 @@
     CLOSED: [2016-10-30 Sun 12:00]
 *** DONE done: bewit authentication
     CLOSED: [2016-10-30 Sun 12:00]
-*** TODO http-conduit wrapper
+*** DONE http-conduit wrapper
+    CLOSED: [2016-12-04 Sun 22:24]
 *** TODO yesod authentication plugin
 *** DONE rename default functions to def and re-export def
     CLOSED: [2016-11-30 Wed 22:47]
@@ -39,6 +40,17 @@
 
 *** TODO allow pre-calculated payload hashes
     payloadHash :: Algorithm or Creds -> ContentType -> ByteString -> PayloadHash
+
+*** DONE nonce validation helper
+    CLOSED: [2016-12-04 Sun 22:28]
+
+*** TODO client.message.authenticate()
+*** TODO server.authenticateMessage()
+*** TODO helper function for client-side nonce validation
+    Server responses have the client-generated nonce included, so are
+    usually save from response replays. But if the client response
+    handler is an api endpoint available to attacker, then the client
+    needs to validate nonces.
 
 ** Oz
 *** TODO A decent client API and ticket endpoints for Oz

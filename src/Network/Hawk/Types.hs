@@ -37,8 +37,8 @@ data HeaderArtifacts = HeaderArtifacts
   , haPort      :: Maybe Int        -- ^ Request port
   , haResource  :: ByteString       -- ^ Request path and query params
   , haId        :: ClientId         -- ^ Client identifier
-  , haTimestamp :: POSIXTime
-  , haNonce     :: ByteString       -- ^ Nonce data
+  , haTimestamp :: POSIXTime        -- ^ Time of request
+  , haNonce     :: ByteString       -- ^ Nonce value
   , haMac       :: ByteString       -- ^ Entire header hash
   , haHash      :: Maybe ByteString -- ^ Payload hash
   , haExt       :: Maybe ExtData    -- ^ Optional application data
