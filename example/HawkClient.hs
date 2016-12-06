@@ -45,7 +45,7 @@ printResponse valid r = putStrLn $ (show $ getResponseStatusCode r) ++ ": "
 clientMain :: IO ()
 clientMain = (withHawk httpLBS uri >>= printResponse True) `E.catches` handlers
   where
-    withHawk = Hawk.withHawkPayload creds ext payload Hawk.ServerAuthorizationRequired
+    withHawk = Hawk.withHawk creds ext (Just payload) Hawk.ServerAuthorizationRequired
     handlers = [E.Handler handleHTTP, E.Handler handleHawk]
     handleHTTP e@(StatusCodeException s hdrs _)
       | statusCode s == 401 = S8.putStrLn $ errMessage s hdrs

@@ -278,9 +278,7 @@ headerSuccess (AuthSuccess creds arts _) payload = hawkHeaderString (catMaybes p
     mac = serverMac creds arts HawkResponse
 
 serverMac :: Credentials -> HeaderArtifacts -> HawkType -> ByteString
-serverMac Credentials{..} HeaderArtifacts{..} =
-  calculateMac scAlgorithm scKey
-    haTimestamp haNonce haMethod haResource haHost haPort
+serverMac Credentials{..} arts = calculateMac scAlgorithm scKey arts
 
 headerFail :: AuthFail -> ByteString
 headerFail (AuthFailBadRequest e _) = hawkHeaderError e []

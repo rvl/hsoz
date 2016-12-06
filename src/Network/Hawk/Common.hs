@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ExistentialQuantification #-}
 
 module Network.Hawk.Common
@@ -21,17 +22,19 @@ import           Data.ByteString.Builder   (byteString, charUtf8,
                                             toLazyByteString)
 import qualified Data.ByteString.Char8     as S8
 import qualified Data.ByteString.Lazy      as BL
+import           Data.Text.Encoding        (encodeUtf8)
 import           Data.Byteable             (constEqBytes)
 import           Data.Char                 (toLower, toUpper)
 import           Data.List                 (intercalate)
 import           Data.Monoid               ((<>))
+import           Data.Maybe                (fromMaybe)
 import           Data.Time.Clock.POSIX
 import           Network.HTTP.Types.Header (HeaderName)
 import           Network.HTTP.Types.Method (Method)
 
 import           Network.Hawk.Types
 
-data HawkType = HawkHeader | HawkBewit | HawkResponse
+data HawkType = HawkHeader | HawkBewit | HawkResponse | HawkPayload | HawkTs
               deriving (Show, Eq)
 
 -- | The value of an @Authorization@ header.
@@ -39,13 +42,8 @@ type Authorization = ByteString
 
 -- | Generates a @hawk.1.@ string with the given attributes,
 -- calculates its HMAC, and returns the Base64 encoded hash.
-calculateMac :: HawkAlgoCls a => a -> Key
-             -> POSIXTime -> ByteString -> Method
-             -> ByteString -> ByteString -> Maybe Int
-             -> HawkType -> ByteString
-calculateMac a key ts nonce method path host port hawkType = hawkMac a key str
-  where
-    str = hawk1String hawkType ts nonce method path host port
+calculateMac :: HawkAlgoCls a => a -> Key -> HeaderArtifacts -> HawkType -> ByteString
+calculateMac a key arts hawkType = hawkMac a key $ hawk1String hawkType arts
 
 -- This would be the same as Hoek.escapeHeaderAttribute, which
 -- replaces double quotes and backslashes so that the string can be
@@ -72,37 +70,50 @@ checkPayloadHash algo hash payload = case checkPayloadHashMaybe algo hash payloa
   Just False -> Left "Bad response payload mac"
   Just True  -> Right ()
 
-hawk1String :: HawkType -> POSIXTime -> ByteString -> Method -> ByteString -> ByteString -> Maybe Int -> ByteString
+hawk1String :: HawkType -> HeaderArtifacts -> ByteString
 -- corresponds to generateNormalizedString in crypto.js
--- fixme: ext and payload hash
-hawk1String t ts nonce method resource host port = newlines $
-  [ "hawk.1." <> hawkType t
-  , S8.pack . show . round $ ts
-  , nonce
-  , S8.map toUpper method
-  , resource
-  , S8.map toLower host
-  , maybe "" (S8.pack . show) port
-  , payloadHash
-  ] ++ ext
+hawk1String t HeaderArtifacts{..} = newlines $
+  [ hawk1Header t
+  , S8.pack . show . round $ haTimestamp
+  , haNonce
+  , S8.map toUpper haMethod
+  , haResource
+  , S8.map toLower haHost
+  , maybe "" (S8.pack . show) haPort
+  , fromMaybe "" haHash
+  , maybe "" escapeExt haExt
+  ] ++ map encodeUtf8 (oz haApp haDlg)
   where
-      ext = []
-      payloadHash = ""
+    oz Nothing _ = []
+    oz (Just a) (Just d) = [a, d]
+    oz (Just a) Nothing = [a]
 
 hawk1Payload :: PayloadInfo -> ByteString
-hawk1Payload (PayloadInfo contentType body) = newlines [ "hawk.1.payload"
+hawk1Payload (PayloadInfo contentType body) = newlines [ hawk1Header HawkPayload
                                                        , contentType
                                                        , BL.toStrict body ]
 
-newlines :: [ByteString] -> ByteString
-newlines lines = BS.intercalate (S8.singleton '\n') (lines ++ [""])
+hawk1Ts :: POSIXTime -> ByteString
+hawk1Ts ts = newlines [hawk1Header HawkTs, nowSecs ts]
+  where nowSecs = S8.pack . show . floor
+
+hawk1Header :: HawkType -> ByteString
+hawk1Header t = "hawk.1." <> hawkType t
 
 hawkType :: HawkType -> ByteString
 hawkType HawkHeader   = "header"
 hawkType HawkBewit    = "bewit"
 hawkType HawkResponse = "response"
+hawkType HawkPayload  = "payload"
+hawkType HawkTs       = "ts"
 
-hawk1Header = hawk1String HawkHeader
+newlines :: [ByteString] -> ByteString
+newlines lines = BS.intercalate (S8.singleton '\n') (lines ++ [""])
+
+escapeExt :: ExtData -> ExtData
+escapeExt = sub '\n' "\\n" . sub '\\' "\\\\"
+  where
+    sub s r = BS.intercalate r . S8.split s
 
 -- Generates an @Authorization@ header string of the form:
 -- Hawk id="app123", ts="1476130687", nonce="+olvVyT7i8dqkA==",
@@ -121,10 +132,6 @@ calculatePayloadHash algo payload = hawkHash algo (hawk1Payload payload)
 
 calculateTsMac :: HawkAlgoCls a => a -> POSIXTime -> ByteString
 calculateTsMac algo ts = hawkHash algo (hawk1Ts ts)
-
-hawk1Ts :: POSIXTime -> ByteString
-hawk1Ts ts = newlines ["hawk.1.ts", nowSecs ts]
-  where nowSecs = S8.pack . show . floor
 
 -- | The name of the authorization header which the server provides to
 -- the client.

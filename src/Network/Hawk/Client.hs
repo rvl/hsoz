@@ -139,9 +139,7 @@ clientHawkAuth arts@HeaderArtifacts{..} = hawkHeaderString (hawkHeaderItems item
             ]
 
 clientMac :: HawkType -> Credentials -> HeaderArtifacts -> ByteString
-clientMac h Credentials{..} HeaderArtifacts{..} =
-  calculateMac ccAlgorithm ccKey
-      haTimestamp haNonce haMethod haResource haHost haPort h
+clientMac h Credentials{..} arts = calculateMac ccAlgorithm ccKey arts h
 
 hawkHeaderItems :: [(ByteString, Maybe ByteString)] -> [(ByteString, ByteString)]
 hawkHeaderItems = catMaybes . map pull
