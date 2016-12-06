@@ -30,7 +30,8 @@ import qualified Data.Text              as T
 import           Data.Text.Encoding     (decodeUtf8)
 import           Data.Time.Clock.POSIX  (POSIXTime, getPOSIXTime)
 
-import           Network.Hawk.Server.Types
+import           Network.Hawk.Server
+import           Network.Hawk.Types
 import qualified Network.Iron           as Iron
 import           Network.Oz.JSON
 import           Network.Oz.Types

@@ -6,6 +6,7 @@ import Data.Either (isRight)
 import Data.Maybe (isJust)
 import Data.Default
 import Data.ByteString (ByteString)
+import qualified Data.ByteString.Char8 as S8
 import qualified Data.ByteString.Lazy as BL
 import Network.Wai (Request(..), defaultRequest)
 import Network.HTTP.Client (Response(..))
@@ -13,19 +14,23 @@ import Network.HTTP.Client.Internal (Response(..))
 import Network.HTTP.Types (Method, RequestHeaders)
 import Network.HTTP.Types.Status (ok200)
 import Data.Text.Encoding (decodeUtf8)
-import Data.Time.Clock.POSIX     (POSIXTime, getPOSIXTime)
+import Data.Time.Clock.POSIX (POSIXTime, getPOSIXTime)
+import Data.Time.Clock (NominalDiffTime)
 
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (testCase)
 import Test.HUnit (Assertion, (@?=), (@?))
 import Test.Tasty.QuickCheck (testProperty)
 import Test.QuickCheck
+import Debug.Trace
 
 import Network.Hawk
-import Network.Hawk.Server.Types (HawkReq(..), AuthSuccess(..))
+import Network.Hawk.Internal.Server.Types (HawkReq(..), AuthSuccess(..))
+import Network.Hawk.Internal.Server.Header (timestampMessage)
 import qualified Network.Hawk.Client as Client
+import qualified Network.Hawk.Client.HeaderParser as Client
 import qualified Network.Hawk.Server as Server
-import qualified Network.Hawk.Types (HeaderArtifacts(..))
+import qualified Network.Hawk.Types as Hawk (HeaderArtifacts(..))
 import qualified Network.Hawk.Server.Nonce as Server
 
 tests :: TestTree
@@ -43,6 +48,7 @@ tests = testGroup "Network.Hawk"
           , test08
           --, testCase "generates a header then fail authentication due to bad hash" duplicate
           , test09
+          , testWWWAuthenticate
           ]
         , testGroup "header" [ testHeader01 ]
         , testGroup "Server"
@@ -80,7 +86,7 @@ test01 = testCase "generates a header then successfully parses it" $ do
   isRight r @?= True
   let Right (Server.AuthSuccess creds' arts user) = r
   user @?= "steve"
-  Server.haExt arts @?= Just "some-app-data"
+  Hawk.haExt arts @?= Just "some-app-data"
 
 test02 = testCase "generates a header then successfully parses it (WAI request)" $ do
   -- Generate client header
@@ -96,7 +102,7 @@ test02 = testCase "generates a header then successfully parses it (WAI request)"
   isRight r @? "Expected auth success, got: " ++ show r
   let Right s@(Server.AuthSuccess creds2 arts user) = r
   user @?= "steve"
-  Server.haExt arts @?= Just "some-app-data"
+  Hawk.haExt arts @?= Just "some-app-data"
   Server.authenticatePayload s payload @?= Right ()
 
   -- Client verifies server response
@@ -147,7 +153,7 @@ test03 = testCase "generates a header then successfully parses it (absolute requ
   isRight r @? "Expected auth success, got: " ++ show r
   let Right s@(Server.AuthSuccess creds2 arts user) = r
   user @?= "steve"
-  Server.haExt arts @?= Just "some-app-data"
+  Hawk.haExt arts @?= Just "some-app-data"
   Server.authenticatePayload s payload @?= Right ()
 
   let payload2 = PayloadInfo "text/plain" "some reply"
@@ -178,7 +184,7 @@ test04 = testCase "generates a header then fails to parse it (missing server hea
   isRight r @? "Expected auth success, got: " ++ show r
   let Right s@(Server.AuthSuccess creds2 arts user) = r
   user @?= "steve"
-  Server.haExt arts @?= Just "some-app-data"
+  Hawk.haExt arts @?= Just "some-app-data"
   Server.authenticatePayload s payload @?= Right ()
 
   let payload2 = PayloadInfo "text/plain" "some reply"
@@ -211,7 +217,7 @@ test05 = testCase "generates a header then successfully parse it then validate p
   isRight r @?= True
   let Right s@(Server.AuthSuccess creds' arts user) = r
   user @?= "steve"
-  Server.haExt arts @?= Just "some-app-data"
+  Hawk.haExt arts @?= Just "some-app-data"
 
   -- authenticate payload
   Server.authenticatePayload s payload @?= Right ()
@@ -241,7 +247,7 @@ test06 = testCase "generates a header then successfully parses and validates pay
   isRight r @?= True
   let Right s@(Server.AuthSuccess creds' arts user) = r
   user @?= "steve"
-  Server.haExt arts @?= Just "some-app-data"
+  Hawk.haExt arts @?= Just "some-app-data"
 
   r2 <- Server.authenticate def credsFunc hrq2
   r2 @?= Left (Server.AuthFailUnauthorized "Bad response payload mac" (Just creds') (Just arts))
@@ -267,9 +273,9 @@ test07 = testCase "generates a header then successfully parse it (app)" $ do
   isRight r @?= True
   let Right s@(Server.AuthSuccess creds' arts user) = r
   user @?= user
-  Server.haExt arts @?= Just "some-app-data"
-  Server.haApp arts @?= Just app
-  Server.haDlg arts @?= Nothing
+  Hawk.haExt arts @?= Just "some-app-data"
+  Hawk.haApp arts @?= Just app
+  Hawk.haDlg arts @?= Nothing
 
 test08 = testCase "generates a header then successfully parse it (app, dlg)" $ do
   let (creds, credsFunc, user) = makeCreds "123456"
@@ -290,9 +296,9 @@ test08 = testCase "generates a header then successfully parse it (app, dlg)" $ d
   isRight r @?= True
   let Right s@(Server.AuthSuccess creds' arts user) = r
   user @?= user
-  Server.haExt arts @?= Just "some-app-data"
-  Server.haApp arts @?= Just app
-  Server.haDlg arts @?= Just "23434szr3q4d"
+  Hawk.haExt arts @?= Just "some-app-data"
+  Hawk.haApp arts @?= Just app
+  Hawk.haDlg arts @?= Just "23434szr3q4d"
 
 test09 = testCase "generates a header for one resource then fail to authenticate another" $ do
   let (creds, credsFunc, user) = makeCreds "123456"
@@ -385,23 +391,28 @@ testServerAuth07 = testCase "errors on a stale timestamp" $ do
   res <- testAuth' "Hawk id=\"123456\", ts=\"1362337299\", nonce=\"UzmxSs\", ext=\"some-app-data\", mac=\"wnNUxchvvryMH2RxckTdZ/gY3ijzvccx4keVvELC61w=\"" now testReq01 now def
   checkAuthFail res "Expired seal" -- js impl says "Stale timestamp"
 
-{-
--- fixme: allow testing of internal modules
 testWWWAuthenticate = testProperty "timeStampMessage . parseWwwAuthenticateHeader == id"
   prop_parseWWWAuthenticate
 
+instance Arbitrary NominalDiffTime where
+  arbitrary = do
+    n <- choose (-3600 * 24, 3600 * 24) :: Gen Double
+    return $ 1481062437 + realToFrac n
+
 prop_parseWWWAuthenticate :: (POSIXTime, String) -> Property
-prop_parseWWWAuthenticate (ts, error) = (check <$> wh) == Right True
+prop_parseWWWAuthenticate (ts, error) = isNice error ==> either (const $ property False) check wh
   where
-    check Client.WwwAuthenticateHeader{..} = wahTs == ts &&
-                                             wahError error &&
-                                             wahTsm /= "" &&
-                                             cc = Right ts
-    creds = testCredsFunc "asdf"
-    h = Server.timeStampMessage error ts creds
+    check Client.WwwAuthenticateHeader{..} = floor wahTs == floor ts .&&.
+                                             wahError == (S8.pack error) .&&.
+                                             wahTsm /= ""
+    algo = HawkAlgo SHA256
+    key = "key"
+    cc = Client.Credentials "1" key algo
+    sc = Server.Credentials key algo
+    h = timestampMessage error ts sc
     wh = Client.parseWwwAuthenticateHeader h
-    cc = Client.checkWwwAuthenticateHeader creds h
--}
+    --ck = Client.checkWwwAuthenticateHeader cc h
+    isNice = notElem '"'  -- fixme: need to handle quote characters?
 
 testServerAuth08 = testCase "errors on a replay" $ do
   let auth = "Hawk id=\"123\", ts=\"1353788437\", nonce=\"k3j4h2\", mac=\"bXx7a7p1h9QYQNZ8x7QhvDQym8ACgab4m3lVSFn4DBw=\", ext=\"hello\""

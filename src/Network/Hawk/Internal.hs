@@ -1,7 +1,12 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ExistentialQuantification #-}
 
-module Network.Hawk.Common
+-- | These functions are intended only to be used internally by this
+-- package. No API stability is guaranteed for this module. If you see
+-- functions here which you believe should be promoted to a stable
+-- API, please contact the author.
+
+module Network.Hawk.Internal
        ( calculateMac
        , escapeHeaderAttribute
        , hawkHeaderString

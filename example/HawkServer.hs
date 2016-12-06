@@ -17,7 +17,7 @@ import           Network.Wai
 import           Network.Wai.Handler.Warp
 
 import           Common
-import           Network.Hawk.Server.Types
+import           Network.Hawk.Types
 import qualified Network.Hawk.Server       as Hawk
 import qualified Network.Hawk.Server.Nonce as Hawk
 
@@ -26,8 +26,8 @@ serverMain = do
   opts <- Hawk.nonceOptsReq 60
   run 8000 (app opts)
 
-auth :: ClientId -> IO (Either String (Credentials, Text))
-auth id = return $ Right (Credentials sharedKey (HawkAlgo SHA256), "Steve")
+auth :: ClientId -> IO (Either String (Hawk.Credentials, Text))
+auth id = return $ Right (Hawk.Credentials sharedKey (HawkAlgo SHA256), "Steve")
 
 app :: Hawk.AuthReqOpts -> Application
 app opts req respond = do
@@ -42,9 +42,9 @@ app opts req respond = do
     Left f -> let
       (status, hdr) = Hawk.header res Nothing
       msg = case f of
-        AuthFailBadRequest e _         -> e
-        AuthFailUnauthorized e _ _     -> "Shoosh!"
-        AuthFailStaleTimeStamp e _ _ _ -> e
+        Hawk.AuthFailBadRequest e _         -> e
+        Hawk.AuthFailUnauthorized e _ _     -> "Shoosh!"
+        Hawk.AuthFailStaleTimeStamp e _ _ _ -> e
       in responseLBS status [plain, hdr] (L8.pack msg)
 
 textPayload :: Text -> PayloadInfo

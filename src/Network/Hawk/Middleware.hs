@@ -22,7 +22,7 @@ import           Network.HTTP.Types.Header (Header, hContentType, hWWWAuthentica
 import qualified Data.Vault.Lazy as V
 
 import qualified Network.Hawk.Server as Hawk
-import qualified Network.Hawk.Server.Types as Hawk
+import qualified Network.Hawk.Types as Hawk
 
 -- | Whether the middleware should verify the payload hash by reading
 -- the entire request body. 'Network.Hawk.Server.authenticatePayload'

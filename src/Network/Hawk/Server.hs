@@ -8,17 +8,31 @@
 -- module.
 
 module Network.Hawk.Server
-       ( authenticateRequest
-       , authenticate
+       ( -- * Authenticating "Network.Wai" requests
+         authenticateRequest
        , authenticatePayload
        , authenticateBewitRequest
+       , AuthReqOpts(..)
+       -- ** Generic variants
+       , authenticate
        , authenticateBewit
        , HawkReq(..)
-       , header
-       , AuthReqOpts(..)
+       -- ** Options for authentication
        , AuthOpts(..)
+       , Credentials(..)
+       , CredentialsFunc
+       , NonceFunc
+       , Nonce
        , def
-       , module Network.Hawk.Server.Types
+       -- ** Authentication result
+       , AuthResult
+       , AuthResult'(..)
+       , AuthSuccess(..)
+       , AuthFail(..)
+       , authFailMessage
+       -- * Authenticated reponses
+       , header
+       , module Network.Hawk.Types
        ) where
 
 import           Control.Applicative       ((<|>))
@@ -30,7 +44,7 @@ import qualified Data.ByteString.Char8     as S8
 import qualified Data.ByteString.Lazy      as BL
 import           Data.Byteable             (constEqBytes)
 import           Data.CaseInsensitive      (CI (..))
-import           Data.Maybe                (catMaybes, fromMaybe)
+import           Data.Maybe                (fromMaybe)
 import           Data.Monoid               ((<>))
 import           Data.Text                 (Text)
 import qualified Data.Text                 as T
@@ -39,18 +53,19 @@ import           Control.Error.Safe        (rightMay)
 import           Data.Default              (Default(..))
 import           Data.Time.Clock           (NominalDiffTime)
 import           Data.Time.Clock.POSIX
-import           Network.HTTP.Types.Header (Header, hAuthorization,
-                                            hContentType, hWWWAuthenticate)
+import           Network.HTTP.Types.Header (Header, hAuthorization, hContentType)
 import           Network.HTTP.Types.Method (Method, methodGet, methodPost)
-import           Network.HTTP.Types.Status (Status, ok200, badRequest400, unauthorized401)
 import           Network.HTTP.Types.URI    (renderQuery)
 import           Network.Wai               (Request, rawPathInfo,
                                             rawQueryString, queryString,
                                             remoteHost, requestMethod,
                                             requestHeaderHost, requestHeaders)
 
-import           Network.Hawk.Common
-import           Network.Hawk.Server.Types
+import           Network.Hawk.Types
+import           Network.Hawk.Internal
+import           Network.Hawk.Internal.Server
+import           Network.Hawk.Internal.Server.Types
+import           Network.Hawk.Internal.Server.Header
 import           Network.Hawk.Util
 import           Network.Iron.Util         (b64urldec, justRight, mapLeft)
 
@@ -252,48 +267,6 @@ authenticatePayload :: AuthSuccess t -> PayloadInfo -> Either String ()
 authenticatePayload (AuthSuccess c a _) p =
   checkPayloadHash (scAlgorithm c) (haHash a) (Just p)
 
-
--- | Generates a suitable @Server-Authorization@ header to send back
--- to the client. Credentials and artifacts would be provided by a
--- previous call to 'authenticateRequest' (or 'authenticate').
---
--- If a payload is supplied, its hash will be included in the header.
-header :: AuthResult t -> Maybe PayloadInfo -> (Status, Header)
-header (Right a) p = (ok200, (hServerAuthorization, headerSuccess a p))
-header (Left e) _ = (status e, (hWWWAuthenticate, headerFail e))
-  where
-    status (AuthFailBadRequest _ _)       = badRequest400
-    status (AuthFailUnauthorized _ _ _)   = unauthorized401
-    status (AuthFailStaleTimeStamp _ _ _ _) = unauthorized401
-
-headerSuccess :: AuthSuccess t -> Maybe PayloadInfo -> ByteString
-headerSuccess (AuthSuccess creds arts _) payload = hawkHeaderString (catMaybes parts)
-  where
-    parts :: [Maybe (ByteString, ByteString)]
-    parts = [ Just ("mac", mac)
-            , fmap ((,) "hash") hash
-            , fmap ((,) "ext") ext]
-    hash = calculatePayloadHash (scAlgorithm creds) <$> payload
-    ext = escapeHeaderAttribute <$> (haExt arts)
-    mac = serverMac creds arts HawkResponse
-
-serverMac :: Credentials -> HeaderArtifacts -> HawkType -> ByteString
-serverMac Credentials{..} arts = calculateMac scAlgorithm scKey arts
-
-headerFail :: AuthFail -> ByteString
-headerFail (AuthFailBadRequest e _) = hawkHeaderError e []
-headerFail (AuthFailUnauthorized e _ _) = hawkHeaderError e []
-headerFail (AuthFailStaleTimeStamp e now creds artifacts) = timestampMessage e now creds
-
-hawkHeaderError :: String -> [(ByteString, ByteString)] -> ByteString
-hawkHeaderError e ps = hawkHeaderString (("error", S8.pack e):ps)
-
-timestampMessage :: String -> POSIXTime -> Credentials -> ByteString
-timestampMessage e now creds = hawkHeaderError e parts
-  where
-    parts = [ ("ts", (S8.pack . show . floor) now)
-            , ("tsm", calculateTsMac (scAlgorithm creds) now)
-            ]
 
 checkNonce :: Bool -> Either String ()
 checkNonce True  = Right ()

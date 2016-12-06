@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveGeneric             #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 -- | Consider this module to be internal, and don't import directly.
 
@@ -10,7 +10,7 @@ import           Data.Time.Clock.POSIX (POSIXTime)
 import           GHC.Generics
 import           Network.HTTP.Types.Method (Method)
 
-import           Network.Hawk.Common
+import           Network.Hawk.Internal (Authorization)
 import           Network.Hawk.Types
 
 -- | ID and key used for encrypting Hawk @Authorization@ header.

@@ -21,7 +21,7 @@ import           Data.Text                        (Text)
 import           Data.Text.Encoding               (decodeUtf8)
 import           Data.Time.Clock.POSIX
 
-import           Network.Hawk.Common
+import           Network.Hawk.Internal
 import           Network.Hawk.Types
 
 parseHeader :: [ByteString] -> (AuthAttrs -> Either String hdr) -> ByteString -> Either String (AuthScheme, hdr)

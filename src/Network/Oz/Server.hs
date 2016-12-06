@@ -21,8 +21,7 @@ import           Network.Wai
 
 import           Network.Hawk.Server    (AuthFail (..), AuthResult, AuthResult' (..),
                                          AuthSuccess (..),
-                                         Credentials(..),
-                                         HeaderArtifacts(..))
+                                         Credentials(..))
 import qualified Network.Hawk.Server    as Hawk
 import           Network.Hawk.Types
 import qualified Network.Oz.Ticket      as Ticket

@@ -36,7 +36,8 @@ import           Network.Wai
 import           Web.Scotty
 import           Data.Time.Clock.POSIX     (getPOSIXTime)
 
-import           Network.Hawk.Server       (AuthSuccess (..), Key (..), HeaderArtifacts (..))
+import           Network.Hawk.Types        (Key (..), HeaderArtifacts (..))
+import           Network.Hawk.Server       (AuthSuccess (..))
 import qualified Network.Hawk.Server       as Hawk
 import qualified Network.Oz.Boom           as Boom
 import           Network.Oz.Internal.Types
@@ -162,7 +163,7 @@ ozAppScotty OzServerOpts{..} = do
         Left f -> hawkAuthFail f
 
     -- Scotty action to check the Authorization header
-    hawkAuthAction :: ActionM (Hawk.Credentials, Hawk.HeaderArtifacts)
+    hawkAuthAction :: ActionM (Hawk.Credentials, HeaderArtifacts)
     hawkAuthAction = do
       req <- request
       -- payload <- fmap Just body  -- fixme: check if it's compatible with jsonData

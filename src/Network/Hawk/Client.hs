@@ -61,7 +61,7 @@ import           Control.Exception         (Exception, throwIO)
 import           Control.Monad.Catch       as E (MonadThrow(..), MonadCatch(..), handle)
 import           Control.Monad             (join)
 
-import           Network.Hawk.Common
+import           Network.Hawk.Internal
 import           Network.Hawk.Types
 import           Network.Hawk.Util
 import           Network.Iron.Util

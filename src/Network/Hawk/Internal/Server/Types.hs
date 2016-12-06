@@ -1,19 +1,9 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Network.Hawk.Server.Types
-  ( AuthResult
-  , AuthResult'(..)
-  , AuthFail(..)
-  , authFailMessage
-  , AuthSuccess(..)
-  , Credentials(..)
-  , CredentialsFunc
-  , HawkReq(..)
-  , NonceFunc
-  , Nonce
-  , module Network.Hawk.Types
-  ) where
+-- | Consider this module to be internal, and don't import directly.
+
+module Network.Hawk.Internal.Server.Types where
 
 import Data.ByteString           (ByteString)
 import Data.Text                 (Text)
@@ -48,6 +38,7 @@ instance Show t => Show (AuthSuccess t) where
 instance Eq t => Eq (AuthSuccess t) where
   AuthSuccess c a t == AuthSuccess d b u = c == d && a == b && t == u
 
+-- | The error message from an 'AuthFail'.
 authFailMessage :: AuthFail -> String
 authFailMessage (AuthFailBadRequest e _) = e
 authFailMessage (AuthFailUnauthorized e _ _) = e
@@ -82,6 +73,12 @@ data Credentials = Credentials
 -- identifier.
 type CredentialsFunc m t = ClientId -> m (Either String (Credentials, t))
 
--- | User-supplied nonce validation function.
+-- | User-supplied nonce validation function. It should return 'True'
+-- if the nonce is valid.
+--
+-- Checking nonces can prevent request replay attacks. If the same key
+-- and nonce have already been seen, then the request can be denied.
 type NonceFunc = Key -> POSIXTime -> Nonce -> IO Bool
+
+-- | The nonce should be a short sequence of random ASCII characters.
 type Nonce = ByteString

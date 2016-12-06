@@ -17,8 +17,8 @@ import Data.Time.Clock (NominalDiffTime)
 import Data.Hashable (Hashable)
 import Data.Foldable (toList)
 
-import Network.Hawk.Server (AuthOpts(..), AuthReqOpts(..), Key, def)
-import Network.Hawk.Server.Types (Nonce, NonceFunc)
+import Network.Hawk.Types (Key)
+import Network.Hawk.Server (AuthOpts(..), AuthReqOpts(..), def, Nonce, NonceFunc)
 
 -- | Creates an 'Hawk.AuthOpts' with a nonce validation function which
 -- remembers previous nonces for as long as they are valid. The @skew@
