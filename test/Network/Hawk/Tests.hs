@@ -59,6 +59,16 @@ tests = testGroup "Network.Hawk"
             , testServerAuth06
             , testServerAuth07
             , testServerAuth08
+            , testServerAuth09
+            , testServerAuth10
+            , testServerAuth11
+            , testServerAuth12
+            , testServerAuth13
+            , testServerAuth14
+            , testServerAuth15
+            , testServerAuth16
+            , testServerAuth17
+            , testServerAuth18
             ]
           ]
         ]
@@ -351,14 +361,18 @@ testAuth' auth ts hrq now opts = do
       hrq' = hrq { hrqAuthorization = auth }
   Server.authenticate opts' testCredsFunc hrq'
 
-testCredsFunc i = f i
-  where (_, f, _) = makeCreds i
+testCredsFunc i = if i == "456" then return alt else f i
+  where
+    (_, f, _) = makeCreds i
+    alt = Right (Server.Credentials altKey (HawkAlgo SHA256), "bob")
+    altKey = "xrunpaw3489ruxnpa98w4rxnwerxhqb98rpaxn39848"
 
-checkAuthSuccess (Left f) = show f @?= "some success"
-checkAuthSuccess (Right (AuthSuccess c a t)) = t @?= "steve"
+checkAuthSuccess = checkAuthSuccessUser "steve"
+checkAuthSuccessUser _    (Left f) = show f @?= "some success"
+checkAuthSuccessUser user (Right (AuthSuccess c a t)) = t @?= user
 
-checkAuthFail (Left f) msg = Server.authFailMessage f @?= msg
-checkAuthFail (Right _) _ = "success" @?= "failure"
+checkAuthFail msg (Left f)  = Server.authFailMessage f @?= msg
+checkAuthFail _   (Right _) = "success" @?= "failure"
 
 
 -- authenticate
@@ -384,12 +398,12 @@ testServerAuth06 = testCase "errors on missing hash" $ do
   let hrq = testReq02 { hrqPayload = Just (PayloadInfo "" "body") }
   res <- testAuth "Hawk id=\"dh37fgj492je\", ts=\"1353832234\", nonce=\"j4h3g2\", mac=\"m8r1rHbXN6NgO+KIIhjO7sFRyd78RNGVUwehe8Cp2dU=\", ext=\"some-app-data\"" 1353832234 hrq
   -- js impl says "Missing required payload hash"
-  checkAuthFail res "Missing response hash attribute"
+  checkAuthFail "Missing response hash attribute" res
 
 testServerAuth07 = testCase "errors on a stale timestamp" $ do
   now <- getPOSIXTime
   res <- testAuth' "Hawk id=\"123456\", ts=\"1362337299\", nonce=\"UzmxSs\", ext=\"some-app-data\", mac=\"wnNUxchvvryMH2RxckTdZ/gY3ijzvccx4keVvELC61w=\"" now testReq01 now def
-  checkAuthFail res "Expired seal" -- js impl says "Stale timestamp"
+  checkAuthFail "Expired seal" res -- js impl says "Stale timestamp"
 
 testWWWAuthenticate = testProperty "timeStampMessage . parseWwwAuthenticateHeader == id"
   prop_parseWWWAuthenticate
@@ -400,7 +414,8 @@ instance Arbitrary NominalDiffTime where
     return $ 1481062437 + realToFrac n
 
 prop_parseWWWAuthenticate :: (POSIXTime, String) -> Property
-prop_parseWWWAuthenticate (ts, error) = isNice error ==> either (const $ property False) check wh
+prop_parseWWWAuthenticate (ts, error) = isNice error ==>
+                                        either (const $ property False) check wh
   where
     check Client.WwwAuthenticateHeader{..} = floor wahTs == floor ts .&&.
                                              wahError == (S8.pack error) .&&.
@@ -422,19 +437,54 @@ testServerAuth08 = testCase "errors on a replay" $ do
   res1 <- testAuth' auth ts testReq01 now opts
   checkAuthSuccess res1
   res2 <- testAuth' auth ts testReq01 now opts
-  checkAuthFail res2 "Invalid nonce"
+  checkAuthFail "Invalid nonce" res2
 
-{-
-testServerAuth09 = testCase "does not error on nonce collision if keys differ"
-testServerAuth10 = testCase "errors on an invalid authentication header: wrong scheme"
-testServerAuth11 = testCase "errors on an invalid authentication header: no scheme"
-testServerAuth12 = testCase "errors on an missing authorization header"
-testServerAuth13 = testCase "errors on an missing host header"
-testServerAuth14 = testCase "errors on an missing authorization attribute (id)"
-testServerAuth15 = testCase "errors on an missing authorization attribute (ts)"
-testServerAuth16 = testCase "errors on an missing authorization attribute (nonce)"
-testServerAuth17 = testCase "errors on an missing authorization attribute (mac)"
-testServerAuth18 = testCase "errors on an unknown authorization attribute"
+testServerAuth09 = testCase "does not error on nonce collision if keys differ" $ do
+  let auth1 = "Hawk id=\"123\", ts=\"1353788437\", nonce=\"k3j4h2\", mac=\"bXx7a7p1h9QYQNZ8x7QhvDQym8ACgab4m3lVSFn4DBw=\", ext=\"hello\""
+      auth2 = "Hawk id=\"456\", ts=\"1353788437\", nonce=\"k3j4h2\", mac=\"LXfmTnRzrLd9TD7yfH+4se46Bx6AHyhpM94hLCiNia4=\", ext=\"hello\""
+      ts = 1353788437
+  now <- getPOSIXTime
+  opts <- testNonceOpts ts now
+  res1 <- testAuth' auth1 ts testReq01 now opts
+  checkAuthSuccess res1
+  res2 <- testAuth' auth2 ts testReq01 now opts
+  checkAuthSuccessUser "bob" res2
+
+testServerAuth10 = testCase "errors on an invalid authentication header: wrong scheme" $ do
+  res <- testAuth "Basic asdasdasdasd" 1353788437 testReq01
+  checkAuthFail "string" res -- fixme: not a good error message
+
+testServerAuth11 = testCase "errors on an invalid authentication header: no scheme" $ do
+  res <- testAuth "!@#" 1353788437 testReq01
+  checkAuthFail "string" res -- fixme: "Invalid header syntax"
+
+testServerAuth12 = testCase "errors on an missing authorization header" $ do
+  res <- testAuth "" 1353788437 testReq01
+  checkAuthFail "not enough input" res -- fixme: need better error message
+
+-- fixme
+testServerAuth13 = testCase "errors on an missing host header" (return ())
+
+missingAttrTest attr auth = testAuth auth 1353788437 testReq01 >>= checkAuthFail msg
+  -- js impl is just "Missing attributes"
+  where msg = "Failed reading: Missing \"" ++ attr ++ "\" attribute"
+
+testServerAuth14 = testCase "errors on an missing authorization attribute (id)" $
+                   missingAttrTest "id" "Hawk ts=\"1353788437\", nonce=\"k3j4h2\", mac=\"/qwS4UjfVWMcUyW6EEgUH4jlr7T/wuKe3dKijvTvSos=\", ext=\"hello\""
+
+testServerAuth15 = testCase "errors on an missing authorization attribute (ts)" $
+                   missingAttrTest "ts" "Hawk id=\"123\", nonce=\"k3j4h2\", mac=\"/qwS4UjfVWMcUyW6EEgUH4jlr7T/wuKe3dKijvTvSos=\", ext=\"hello\""
+
+testServerAuth16 = testCase "errors on an missing authorization attribute (nonce)" $
+                   missingAttrTest "nonce" "Hawk id=\"123\", ts=\"1353788437\", mac=\"/qwS4UjfVWMcUyW6EEgUH4jlr7T/wuKe3dKijvTvSos=\", ext=\"hello\""
+testServerAuth17 = testCase "errors on an missing authorization attribute (mac)" $
+                   missingAttrTest "mac" "Hawk id=\"123\", ts=\"1353788437\", nonce=\"k3j4h2\", ext=\"hello\""
+
+testServerAuth18 = testCase "errors on an unknown authorization attribute" $ do
+  let msg = "endOfInput" -- fixme: "Unknown attribute: x"
+      auth = "Hawk id=\"123\", ts=\"1353788437\", nonce=\"k3j4h2\", x=\"3\", mac=\"/qwS4UjfVWMcUyW6EEgUH4jlr7T/wuKe3dKijvTvSos=\", ext=\"hello\""
+  testAuth auth 1353788437 testReq01 >>= checkAuthFail msg
+
 testServerAuth19 = testCase "errors on an bad authorization header format"
 testServerAuth20 = testCase "errors on an bad authorization attribute value"
 testServerAuth21 = testCase "errors on an empty authorization attribute value"
@@ -462,29 +512,25 @@ testServerHeader08 = testCase "errors on invalid credentials (key)"
 testServerHeader09 = testCase "errors on invalid algorithm"
 
 -- authenticateBewit()
-
 testServerBewit01 = testCase "errors on uri too long"
--}
 
-{-
 -- message
 testServerMessage01 = testCase "errors on invalid authorization (ts)"
-testServerMessage01 = testCase "errors on invalid authorization (nonce)"
-testServerMessage01 = testCase "errors on invalid authorization (hash)"
-testServerMessage01 = testCase "errors with credentials"
-testServerMessage01 = testCase "errors on nonce collision"
-testServerMessage01 = testCase "should generate an authorization then successfully parse it"
-testServerMessage01 = testCase "should fail authorization on mismatching host"
-testServerMessage01 = testCase "should fail authorization on stale timestamp"
-testServerMessage01 = testCase "overrides timestampSkewSec"
-testServerMessage01 = testCase "should fail authorization on invalid authorization"
-testServerMessage01 = testCase "should fail authorization on bad hash"
-testServerMessage01 = testCase "should fail authorization on nonce error"
-testServerMessage01 = testCase "should fail authorization on credentials error"
-testServerMessage01 = testCase "should fail authorization on missing credentials"
-testServerMessage01 = testCase "should fail authorization on invalid credentials"
-testServerMessage01 = testCase "should fail authorization on invalid credentials algorithm"
-testServerMessage01 = testCase "should fail on missing host"
-testServerMessage01 = testCase "should fail on missing credentials"
-testServerMessage01 = testCase "should fail on invalid algorithm"
--}
+testServerMessage02 = testCase "errors on invalid authorization (nonce)"
+testServerMessage03 = testCase "errors on invalid authorization (hash)"
+testServerMessage04 = testCase "errors with credentials"
+testServerMessage05 = testCase "errors on nonce collision"
+testServerMessage06 = testCase "should generate an authorization then successfully parse it"
+testServerMessage07 = testCase "should fail authorization on mismatching host"
+testServerMessage08 = testCase "should fail authorization on stale timestamp"
+testServerMessage09 = testCase "overrides timestampSkewSec"
+testServerMessage10 = testCase "should fail authorization on invalid authorization"
+testServerMessage11 = testCase "should fail authorization on bad hash"
+testServerMessage12 = testCase "should fail authorization on nonce error"
+testServerMessage13 = testCase "should fail authorization on credentials error"
+testServerMessage14 = testCase "should fail authorization on missing credentials"
+testServerMessage15 = testCase "should fail authorization on invalid credentials"
+testServerMessage16 = testCase "should fail authorization on invalid credentials algorithm"
+testServerMessage17 = testCase "should fail on missing host"
+testServerMessage18 = testCase "should fail on missing credentials"
+testServerMessage19 = testCase "should fail on invalid algorithm"
