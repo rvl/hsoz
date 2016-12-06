@@ -42,8 +42,11 @@ data AuthFail = AuthFailBadRequest String (Maybe HeaderArtifacts)
 -- 'CredentialsFunc'.
 data AuthSuccess t = AuthSuccess Credentials HeaderArtifacts t
 
-instance Show t => Show (AuthSuccess t)
-instance Eq t => Eq (AuthSuccess t)
+instance Show t => Show (AuthSuccess t) where
+  show (AuthSuccess c a t) = "AuthSuccess " ++ show t
+
+instance Eq t => Eq (AuthSuccess t) where
+  AuthSuccess c a t == AuthSuccess d b u = c == d && a == b && t == u
 
 authFailMessage :: AuthFail -> String
 authFailMessage (AuthFailBadRequest e _) = e
