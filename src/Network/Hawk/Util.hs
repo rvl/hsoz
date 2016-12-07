@@ -9,7 +9,8 @@ module Network.Hawk.Util
        , readTsMaybe
        ) where
 
-import           Control.Applicative              ((<|>))
+import           Control.Applicative              (liftA, (<|>))
+import           Control.Monad                    (when, unless)
 import           Data.Attoparsec.ByteString.Char8
 import           Data.ByteString                  (ByteString)
 import qualified Data.ByteString.Char8            as S8
@@ -62,9 +63,13 @@ attr key = (,) <$> key <*> (char8 '=' *> val)
 parseKeys :: [ByteString] -> Parser ByteString
 parseKeys = choice . map string
 
+-- fixme: js impl only accepts limited chars
+-- notInClass "-!#$%&'()*+,./:;<=>?@[]^_`{|}~ a-zA-Z0-9"
+--   => "Bad attribute value: attr"
+-- inClass "\\" => "Bad header format"
 val :: Parser ByteString
-val = q *> takeTill ((==) '"') <* q
-      where q = char8 '"'
+val = q *> takeTill (inClass "\"\\") <* q
+  where q = char8 '"'
 
 readTs :: ByteString -> Either String POSIXTime
 readTs = toEither "Invalid timestamp" . readTsMaybe

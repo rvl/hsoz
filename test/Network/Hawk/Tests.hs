@@ -69,6 +69,14 @@ tests = testGroup "Network.Hawk"
             , testServerAuth16
             , testServerAuth17
             , testServerAuth18
+            , testServerAuth19
+            -- , testServerAuth20
+            -- , testServerAuth21
+            -- , testServerAuth22
+            -- , testServerAuth23
+            , testServerAuth26
+            -- , testServerAuth30
+            , testServerAuth32
             ]
           ]
         ]
@@ -335,19 +343,17 @@ boring = return ()
 testHeader01 = testCase "returns a valid authorization header (sha1)" $ do
   return ()
 
-testUrl01 = "/resource/4?filter=a"
-testUrl02 = "/resource/1?b=1&a=2"
+testReq1 = def { hrqUrl = "/resource/1?b=1&a=2"
+               , hrqHost = "example.com"
+               , hrqPort = Just 8000
+               , hrqAuthorization = ""
+               }
 
-testReq01 = def { hrqUrl = testUrl01
-                , hrqHost = "example.com"
-                , hrqPort = Just 8080
-                , hrqAuthorization = ""
-                }
-testReq02 = def { hrqUrl = testUrl02
-                , hrqHost = "example.com"
-                , hrqPort = Just 8000
-                , hrqAuthorization = ""
-                }
+testReq4 = def { hrqUrl = "/resource/4?filter=a"
+               , hrqHost = "example.com"
+               , hrqPort = Just 8080
+               , hrqAuthorization = ""
+               }
 
 testAuth auth ts hrq = do
   now <- getPOSIXTime
@@ -361,11 +367,16 @@ testAuth' auth ts hrq now opts = do
       hrq' = hrq { hrqAuthorization = auth }
   Server.authenticate opts' testCredsFunc hrq'
 
-testCredsFunc i = if i == "456" then return alt else f i
+testCredsFunc i = case i of
+                    "456" -> return alt
+                    "doesnotexist" -> return $ Left "Unknown user"
+                    "999" -> return short
+                    _ -> f i
   where
     (_, f, _) = makeCreds i
     alt = Right (Server.Credentials altKey (HawkAlgo SHA256), "bob")
     altKey = "xrunpaw3489ruxnpa98w4rxnwerxhqb98rpaxn39848"
+    short = Right (Server.Credentials "hi" (HawkAlgo SHA256), "fred")
 
 checkAuthSuccess = checkAuthSuccessUser "steve"
 checkAuthSuccessUser _    (Left f) = show f @?= "some success"
@@ -377,11 +388,11 @@ checkAuthFail _   (Right _) = "success" @?= "failure"
 
 -- authenticate
 testServerAuth01 = testCase "parses a valid authentication header (sha1)" $ do
-  res <- testAuth "Hawk id=\"1\", ts=\"1353788437\", nonce=\"k3j4h2\", mac=\"zy79QQ5/EYFmQqutVnYb73gAc/U=\", ext=\"hello\"" 1353788437 testReq01
+  res <- testAuth "Hawk id=\"1\", ts=\"1353788437\", nonce=\"k3j4h2\", mac=\"zy79QQ5/EYFmQqutVnYb73gAc/U=\", ext=\"hello\"" 1353788437 testReq4
   checkAuthSuccess res
 
 testServerAuth02 = testCase "parses a valid authentication header (sha256)" $ do
-  res <- testAuth "Hawk id=\"dh37fgj492je\", ts=\"1353832234\", nonce=\"j4h3g2\", mac=\"m8r1rHbXN6NgO+KIIhjO7sFRyd78RNGVUwehe8Cp2dU=\", ext=\"some-app-data\"" 1353832234 testReq02
+  res <- testAuth "Hawk id=\"dh37fgj492je\", ts=\"1353832234\", nonce=\"j4h3g2\", mac=\"m8r1rHbXN6NgO+KIIhjO7sFRyd78RNGVUwehe8Cp2dU=\", ext=\"some-app-data\"" 1353832234 testReq1
   checkAuthSuccess res
 
 -- These two are really just testing the hawkReq function.
@@ -389,20 +400,20 @@ testServerAuth02 = testCase "parses a valid authentication header (sha256)" $ do
 -- testServerAuth04 = testCase "parses a valid authentication header (host port override)"
 
 testServerAuth05 = testCase "parses a valid authentication header (POST with payload)" $ do
-  let hrq = testReq01 { hrqMethod = "POST" }
+  let hrq = testReq4 { hrqMethod = "POST" }
   res <- testAuth "Hawk id=\"123456\", ts=\"1357926341\", nonce=\"1AwuJD\", hash=\"qAiXIVv+yjDATneWxZP2YCTa9aHRgQdnH9b3Wc+o3dg=\", ext=\"some-app-data\", mac=\"UeYcj5UoTVaAWXNvJfLVia7kU3VabxCqrccXP8sUGC4=\"" 1357926341 hrq
   checkAuthSuccess res
 
 
 testServerAuth06 = testCase "errors on missing hash" $ do
-  let hrq = testReq02 { hrqPayload = Just (PayloadInfo "" "body") }
+  let hrq = testReq1 { hrqPayload = Just (PayloadInfo "" "body") }
   res <- testAuth "Hawk id=\"dh37fgj492je\", ts=\"1353832234\", nonce=\"j4h3g2\", mac=\"m8r1rHbXN6NgO+KIIhjO7sFRyd78RNGVUwehe8Cp2dU=\", ext=\"some-app-data\"" 1353832234 hrq
   -- js impl says "Missing required payload hash"
   checkAuthFail "Missing response hash attribute" res
 
 testServerAuth07 = testCase "errors on a stale timestamp" $ do
   now <- getPOSIXTime
-  res <- testAuth' "Hawk id=\"123456\", ts=\"1362337299\", nonce=\"UzmxSs\", ext=\"some-app-data\", mac=\"wnNUxchvvryMH2RxckTdZ/gY3ijzvccx4keVvELC61w=\"" now testReq01 now def
+  res <- testAuth' "Hawk id=\"123456\", ts=\"1362337299\", nonce=\"UzmxSs\", ext=\"some-app-data\", mac=\"wnNUxchvvryMH2RxckTdZ/gY3ijzvccx4keVvELC61w=\"" now testReq4 now def
   checkAuthFail "Expired seal" res -- js impl says "Stale timestamp"
 
 testWWWAuthenticate = testProperty "timeStampMessage . parseWwwAuthenticateHeader == id"
@@ -427,16 +438,17 @@ prop_parseWWWAuthenticate (ts, error) = isNice error ==>
     h = timestampMessage error ts sc
     wh = Client.parseWwwAuthenticateHeader h
     --ck = Client.checkWwwAuthenticateHeader cc h
-    isNice = notElem '"'  -- fixme: need to handle quote characters?
+    -- fixme: need to handle quote characters?
+    isNice s = notElem '"' s && notElem '\\' s
 
 testServerAuth08 = testCase "errors on a replay" $ do
   let auth = "Hawk id=\"123\", ts=\"1353788437\", nonce=\"k3j4h2\", mac=\"bXx7a7p1h9QYQNZ8x7QhvDQym8ACgab4m3lVSFn4DBw=\", ext=\"hello\""
       ts = 1353788437
   now <- getPOSIXTime
   opts <- testNonceOpts ts now
-  res1 <- testAuth' auth ts testReq01 now opts
+  res1 <- testAuth' auth ts testReq4 now opts
   checkAuthSuccess res1
-  res2 <- testAuth' auth ts testReq01 now opts
+  res2 <- testAuth' auth ts testReq4 now opts
   checkAuthFail "Invalid nonce" res2
 
 testServerAuth09 = testCase "does not error on nonce collision if keys differ" $ do
@@ -445,27 +457,27 @@ testServerAuth09 = testCase "does not error on nonce collision if keys differ" $
       ts = 1353788437
   now <- getPOSIXTime
   opts <- testNonceOpts ts now
-  res1 <- testAuth' auth1 ts testReq01 now opts
+  res1 <- testAuth' auth1 ts testReq4 now opts
   checkAuthSuccess res1
-  res2 <- testAuth' auth2 ts testReq01 now opts
+  res2 <- testAuth' auth2 ts testReq4 now opts
   checkAuthSuccessUser "bob" res2
 
 testServerAuth10 = testCase "errors on an invalid authentication header: wrong scheme" $ do
-  res <- testAuth "Basic asdasdasdasd" 1353788437 testReq01
+  res <- testAuth "Basic asdasdasdasd" 1353788437 testReq4
   checkAuthFail "string" res -- fixme: not a good error message
 
 testServerAuth11 = testCase "errors on an invalid authentication header: no scheme" $ do
-  res <- testAuth "!@#" 1353788437 testReq01
+  res <- testAuth "!@#" 1353788437 testReq4
   checkAuthFail "string" res -- fixme: "Invalid header syntax"
 
 testServerAuth12 = testCase "errors on an missing authorization header" $ do
-  res <- testAuth "" 1353788437 testReq01
+  res <- testAuth "" 1353788437 testReq4
   checkAuthFail "not enough input" res -- fixme: need better error message
 
 -- fixme
 testServerAuth13 = testCase "errors on an missing host header" (return ())
 
-missingAttrTest attr auth = testAuth auth 1353788437 testReq01 >>= checkAuthFail msg
+missingAttrTest attr auth = testAuth auth 1353788437 testReq4 >>= checkAuthFail msg
   -- js impl is just "Missing attributes"
   where msg = "Failed reading: Missing \"" ++ attr ++ "\" attribute"
 
@@ -483,22 +495,55 @@ testServerAuth17 = testCase "errors on an missing authorization attribute (mac)"
 testServerAuth18 = testCase "errors on an unknown authorization attribute" $ do
   let msg = "endOfInput" -- fixme: "Unknown attribute: x"
       auth = "Hawk id=\"123\", ts=\"1353788437\", nonce=\"k3j4h2\", x=\"3\", mac=\"/qwS4UjfVWMcUyW6EEgUH4jlr7T/wuKe3dKijvTvSos=\", ext=\"hello\""
-  testAuth auth 1353788437 testReq01 >>= checkAuthFail msg
+  testAuth auth 1353788437 testReq4 >>= checkAuthFail msg
 
-testServerAuth19 = testCase "errors on an bad authorization header format"
-testServerAuth20 = testCase "errors on an bad authorization attribute value"
-testServerAuth21 = testCase "errors on an empty authorization attribute value"
-testServerAuth22 = testCase "errors on duplicated authorization attribute key"
-testServerAuth23 = testCase "errors on an invalid authorization header format"
-testServerAuth24 = testCase "errors on an bad host header (missing host)"
-testServerAuth25 = testCase "errors on an bad host header (pad port)"
-testServerAuth26 = testCase "errors on credentialsFunc error"
-testServerAuth27 = testCase "errors on credentialsFunc error (with credentials)"
-testServerAuth28 = testCase "errors on missing credentials"
-testServerAuth29 = testCase "errors on invalid credentials (id)"
-testServerAuth30 = testCase "errors on invalid credentials (key)"
-testServerAuth31 = testCase "errors on unknown credentials algorithm"
-testServerAuth32 = testCase "errors on unknown bad mac"
+testServerAuth19 = testCase "errors on an bad authorization header format" $ do
+  let msg = "endOfInput" -- fixme: "Bad header format"
+      auth = "Hawk id=\"123\\\", ts=\"1353788437\", nonce=\"k3j4h2\", mac=\"/qwS4UjfVWMcUyW6EEgUH4jlr7T/wuKe3dKijvTvSos=\", ext=\"hello\""
+  res <- testAuth auth 1353788437 testReq4
+  checkAuthFail msg res
+
+testServerAuth20 = testCase "errors on an bad authorization attribute value" $ do
+  res <- testAuth "Hawk id=\"\t\", ts=\"1353788437\", nonce=\"k3j4h2\", mac=\"/qwS4UjfVWMcUyW6EEgUH4jlr7T/wuKe3dKijvTvSos=\", ext=\"hello\"" 1353788437 testReq4
+  checkAuthFail "Bad attribute value: id" res
+
+testServerAuth21 = testCase "errors on an empty authorization attribute value" $ do
+  res <- testAuth "Hawk id=\"\", ts=\"1353788437\", nonce=\"k3j4h2\", mac=\"/qwS4UjfVWMcUyW6EEgUH4jlr7T/wuKe3dKijvTvSos=\", ext=\"hello\"" 1353788437 testReq4
+  checkAuthFail "Bad attribute value: id" res
+
+testServerAuth22 = testCase "errors on duplicated authorization attribute key" $ do
+  res <- testAuth "Hawk id=\"123\", id=\"456\", ts=\"1353788437\", nonce=\"k3j4h2\", mac=\"/qwS4UjfVWMcUyW6EEgUH4jlr7T/wuKe3dKijvTvSos=\", ext=\"hello\"" 1353788437 testReq4
+  checkAuthFail "Duplicate attribute: id" res
+
+testServerAuth23 = testCase "errors on an invalid authorization header format" $ do
+  res <- testAuth "Hawk" 1353788437 testReq4
+  checkAuthFail "Invalid header syntax" res
+
+-- fixme: i don't think these are needed because HawkReq has types
+-- testServerAuth24 = testCase "errors on an bad host header (missing host)" (fail "n/a for wai?")
+-- testServerAuth25 = testCase "errors on an bad host header (bad port)" (fail "n/a for wai?")
+
+testServerAuth26 = testCase "errors on credentialsFunc error" $ do
+  res <- testAuth "Hawk id=\"doesnotexist\", ts=\"1353788437\", nonce=\"k3j4h2\", mac=\"doesn't matter\", ext=\"hello\"" 1353788437 testReq4
+  checkAuthFail "Unknown user" res
+
+-- not sure why this use case is needed
+-- testServerAuth27 = testCase "errors on credentialsFunc error (with credentials)" (fail "n/a")
+
+-- following errors can't happen in this implementation
+-- testServerAuth28 = testCase "errors on missing credentials"
+-- testServerAuth29 = testCase "errors on invalid credentials (id)"
+-- testServerAuth30 = testCase "errors on invalid credentials (key)"
+-- testServerAuth31 = testCase "errors on unknown credentials algorithm"
+
+testServerAuth30 = testCase "errors on invalid credentials (key too short)" $ do
+  res <- testAuth "Hawk id=\"999\", ts=\"1353788437\", nonce=\"k3j4h2\", mac=\"doesn't matter\", ext=\"hello\"" 1353788437 testReq4
+  checkAuthFail "Invalid credentials" res
+
+testServerAuth32 = testCase "errors on unknown bad mac" $ do
+  res <- testAuth "Hawk id=\"123\", ts=\"1353788437\", nonce=\"k3j4h2\", mac=\"/qwS4UjfVWMcU4jlr7T/wuKe3dKijvTvSos=\", ext=\"hello\"" 1353788437 testReq4
+  checkAuthFail "Bad mac" res
+
 
 -- header()
 testServerHeader01 = testCase "generates header"
