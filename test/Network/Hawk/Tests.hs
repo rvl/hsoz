@@ -22,11 +22,11 @@ import Test.Tasty.HUnit (testCase)
 import Test.HUnit (Assertion, (@?=), (@?))
 import Test.Tasty.QuickCheck (testProperty)
 import Test.QuickCheck
-import Debug.Trace
 
 import Network.Hawk
 import Network.Hawk.Internal.Server.Types (HawkReq(..), AuthSuccess(..))
 import Network.Hawk.Internal.Server.Header (timestampMessage)
+import Network.Hawk.Internal (calculatePayloadHash)
 import qualified Network.Hawk.Client as Client
 import qualified Network.Hawk.Client.HeaderParser as Client
 import qualified Network.Hawk.Server as Server
@@ -78,17 +78,33 @@ tests = testGroup "Network.Hawk"
             -- , testServerAuth30
             , testServerAuth32
             ]
+          , testGroup "header()"
+            [ testServerHeader01
+            ]
           ]
         ]
 
 makeCreds :: Client.ClientId -> (Client.Credentials, Server.CredentialsFunc IO String, String)
 makeCreds i = (cc, \i -> return sc, user)
   where
+    sc@(Right (Server.Credentials key algo, user)) = testCreds i
     cc = Client.Credentials i key algo
-    sc = Right (Server.Credentials key algo, user)
-    key = "werxhqb98rpaxn39848xrunpaw3489ruxnpa98w4rxn"
-    algo = if i == "1" then HawkAlgo SHA1 else HawkAlgo SHA256
-    user = "steve"
+
+testCredsFunc = return . testCreds
+testCreds "456"          = credsBob
+testCreds "doesnotexist" = Left "Unknown user"
+testCreds "999"          = credsFred
+testCreds "1"            = credsSteve' (HawkAlgo SHA1)
+testCreds _              = credsSteve' (HawkAlgo SHA256)
+
+credsSteve = credsSteve'
+credsSteve' algo = Right (Server.Credentials key algo, "steve")
+  where key = "werxhqb98rpaxn39848xrunpaw3489ruxnpa98w4rxn"
+credsBob = Right (Server.Credentials altKey (HawkAlgo SHA256), "bob")
+  where altKey = "xrunpaw3489ruxnpa98w4rxnwerxhqb98rpaxn39848"
+credsFred = Right (Server.Credentials "hi" (HawkAlgo SHA256), "fred")
+
+
 
 test01 = testCase "generates a header then successfully parses it" $ do
   let (creds, credsFunc, user) = makeCreds "123456"
@@ -128,7 +144,7 @@ test02 = testCase "generates a header then successfully parses it (WAI request)"
       (_, hdr2) = Server.header r (Just payload2)
       res = mockResponse payload2 [hdr2]
       creds2' = clientCreds "" creds2
-      arts' = arts
+      arts' = arts { haHash = Just $ calculatePayloadHash (Client.ccAlgorithm creds) payload2 }
   r2 <- Client.authenticate res creds2' arts' (Just (payloadData payload2)) Client.ServerAuthorizationRequired
   r2 @?= Right ()
 
@@ -169,8 +185,8 @@ test03 = testCase "generates a header then successfully parses it (absolute requ
             }
   r <- Server.authenticate def credsFunc hrq
   isRight r @? "Expected auth success, got: " ++ show r
-  let Right s@(Server.AuthSuccess creds2 arts user) = r
-  user @?= "steve"
+  let Right s@(Server.AuthSuccess creds2 arts user') = r
+  user' @?= "steve"
   Hawk.haExt arts @?= Just "some-app-data"
   Server.authenticatePayload s payload @?= Right ()
 
@@ -179,7 +195,7 @@ test03 = testCase "generates a header then successfully parses it (absolute requ
       (_, hdr) = Server.header r (Just payload2)
       res = mockResponse payload2 [hdr]
       creds2' = clientCreds "" creds2
-      arts' = arts
+      arts' = arts { haHash = Just $ calculatePayloadHash (Client.ccAlgorithm creds) payload2 }
 
   r2 <- Client.authenticate res creds2' arts' (Just (payloadData payload2)) Client.ServerAuthorizationRequired
   r2 @?= Right ()
@@ -200,8 +216,8 @@ test04 = testCase "generates a header then fails to parse it (missing server hea
             }
   r <- Server.authenticate def credsFunc hrq
   isRight r @? "Expected auth success, got: " ++ show r
-  let Right s@(Server.AuthSuccess creds2 arts user) = r
-  user @?= "steve"
+  let Right s@(Server.AuthSuccess creds2 arts user') = r
+  user' @?= "steve"
   Hawk.haExt arts @?= Just "some-app-data"
   Server.authenticatePayload s payload @?= Right ()
 
@@ -210,9 +226,9 @@ test04 = testCase "generates a header then fails to parse it (missing server hea
       (_, hdr) = Server.header r Nothing
       res = mockResponse payload2 [hdr]
       creds2' = clientCreds "" creds2
-      arts' = arts
+      arts2 = arts { haHash = Nothing }
 
-  r2 <- Client.authenticate res creds2' arts' (Just (payloadData payload2)) Client.ServerAuthorizationRequired
+  r2 <- Client.authenticate res creds2' arts2 (Just (payloadData payload2)) Client.ServerAuthorizationRequired
   r2 @?= Left "Missing response hash attribute"
 
 test05 = testCase "generates a header then successfully parse it then validate payload" $ do
@@ -366,17 +382,6 @@ testAuth' auth ts hrq now opts = do
   let opts' = opts { Server.saLocaltimeOffset = ts - now }
       hrq' = hrq { hrqAuthorization = auth }
   Server.authenticate opts' testCredsFunc hrq'
-
-testCredsFunc i = case i of
-                    "456" -> return alt
-                    "doesnotexist" -> return $ Left "Unknown user"
-                    "999" -> return short
-                    _ -> f i
-  where
-    (_, f, _) = makeCreds i
-    alt = Right (Server.Credentials altKey (HawkAlgo SHA256), "bob")
-    altKey = "xrunpaw3489ruxnpa98w4rxnwerxhqb98rpaxn39848"
-    short = Right (Server.Credentials "hi" (HawkAlgo SHA256), "fred")
 
 checkAuthSuccess = checkAuthSuccessUser "steve"
 checkAuthSuccessUser _    (Left f) = show f @?= "some success"
@@ -546,7 +551,28 @@ testServerAuth32 = testCase "errors on unknown bad mac" $ do
 
 
 -- header()
-testServerHeader01 = testCase "generates header"
+testServerHeader01 = testCase "generates header" $ do
+  --Right (creds, user) <- testCredsFunc "123456"
+  let creds = Server.Credentials "werxhqb98rpaxn39848xrunpaw3489ruxnpa98w4rxn" (HawkAlgo SHA256)
+  let arts = HeaderArtifacts
+             { haMethod = "POST"
+             , haHost = "example.com"
+             , haPort = Just 8080
+             , haResource = hrqUrl testReq4
+             , haTimestamp = 1398546787
+             , haNonce = "xUwusx"
+             , haHash = Just "nJjkVtBE5Y/Bk38Aiokwn0jiJxt/0S2WRSUwWLCf5xk="
+             -- note js tests override artifacts ext with a param to header()
+             , haExt = Just "response-specific"
+             , haMac = "dvIvMThwi28J61Jc3P0ryAhuKpanU63GXdx6hkmQkJA="
+             , haId = "123456"
+             , haApp = Nothing
+             , haDlg = Nothing
+             }
+      res = Right (AuthSuccess creds arts ())
+      (_, (_, hdr)) = Server.header res (Just $ PayloadInfo "text/plain" "some reply")
+  hdr @?= "Hawk mac=\"n14wVJK4cOxAytPUMc5bPezQzuJGl5n7MYXhFQgEKsE=\", hash=\"f9cDF/TDm7TkYRLnGwRMfeDzT6LixQVLvrIKhh0vgmM=\", ext=\"response-specific\""
+
 testServerHeader02 = testCase "generates header (empty payload)"
 testServerHeader03 = testCase "generates header (pre calculated hash)"
 testServerHeader04 = testCase "generates header (null ext)"
