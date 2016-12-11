@@ -39,8 +39,8 @@ headerSuccess (AuthSuccess creds arts _) payload = hawkHeaderString (catMaybes p
             , fmap ((,) "hash") hash
             , fmap ((,) "ext") ext]
     hash = calculatePayloadHash (scAlgorithm creds) <$> payload
-    ext = escapeHeaderAttribute <$> (haExt arts)
-    mac = serverMac creds arts HawkResponse
+    ext = escapeHeaderAttribute <$> haExt arts
+    mac = serverMac creds (arts { haHash = hash }) HawkResponse
 
 headerFail :: AuthFail -> ByteString
 headerFail (AuthFailBadRequest e _) = hawkHeaderError e []
