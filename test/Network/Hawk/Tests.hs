@@ -80,7 +80,14 @@ tests = testGroup "Network.Hawk"
             ]
           , testGroup "header()"
             [ testServerHeader01
+            , testServerHeader02
+            , testServerHeader04
+            , testServerHeader08
             ]
+          , testGroup "authenticateBewit()"
+            [ testServerBewit01
+            ]
+
           ]
         ]
 
@@ -97,7 +104,7 @@ testCreds "999"          = credsFred
 testCreds "1"            = credsSteve' (HawkAlgo SHA1)
 testCreds _              = credsSteve' (HawkAlgo SHA256)
 
-credsSteve = credsSteve'
+credsSteve = credsSteve' (HawkAlgo SHA256)
 credsSteve' algo = Right (Server.Credentials key algo, "steve")
   where key = "werxhqb98rpaxn39848xrunpaw3489ruxnpa98w4rxn"
 credsBob = Right (Server.Credentials altKey (HawkAlgo SHA256), "bob")
@@ -552,8 +559,7 @@ testServerAuth32 = testCase "errors on unknown bad mac" $ do
 
 -- header()
 testServerHeader01 = testCase "generates header" $ do
-  --Right (creds, user) <- testCredsFunc "123456"
-  let creds = Server.Credentials "werxhqb98rpaxn39848xrunpaw3489ruxnpa98w4rxn" (HawkAlgo SHA256)
+  let Right (creds, user) = credsSteve
   let arts = HeaderArtifacts
              { haMethod = "POST"
              , haHost = "example.com"
@@ -573,17 +579,95 @@ testServerHeader01 = testCase "generates header" $ do
       (_, (_, hdr)) = Server.header res (Just $ PayloadInfo "text/plain" "some reply")
   hdr @?= "Hawk mac=\"n14wVJK4cOxAytPUMc5bPezQzuJGl5n7MYXhFQgEKsE=\", hash=\"f9cDF/TDm7TkYRLnGwRMfeDzT6LixQVLvrIKhh0vgmM=\", ext=\"response-specific\""
 
-testServerHeader02 = testCase "generates header (empty payload)"
-testServerHeader03 = testCase "generates header (pre calculated hash)"
-testServerHeader04 = testCase "generates header (null ext)"
-testServerHeader05 = testCase "errors on missing artifacts"
-testServerHeader06 = testCase "errors on invalid artifacts"
-testServerHeader07 = testCase "errors on missing credentials"
-testServerHeader08 = testCase "errors on invalid credentials (key)"
-testServerHeader09 = testCase "errors on invalid algorithm"
+testServerHeader02 = testCase "generates header (empty payload)" $ do
+  let Right (creds, user) = credsSteve
+  let arts = HeaderArtifacts
+             { haMethod = "POST"
+             , haHost = "example.com"
+             , haPort = Just 8080
+             , haResource = hrqUrl testReq4
+             , haTimestamp = 1398546787
+             , haNonce = "xUwusx"
+             , haHash = Just "nJjkVtBE5Y/Bk38Aiokwn0jiJxt/0S2WRSUwWLCf5xk="
+             -- note js tests override artifacts ext with a param to header()
+             , haExt = Just "response-specific"
+             , haMac = "dvIvMThwi28J61Jc3P0ryAhuKpanU63GXdx6hkmQkJA="
+             , haId = "123456"
+             , haApp = Nothing
+             , haDlg = Nothing
+             }
+      res = Right (AuthSuccess creds arts ())
+      (_, (_, hdr)) = Server.header res (Just $ PayloadInfo "text/plain" "")
+  hdr @?= "Hawk mac=\"i8/kUBDx0QF+PpCtW860kkV/fa9dbwEoe/FpGUXowf0=\", hash=\"q/t+NNAkQZNlq/aAD6PlexImwQTxwgT2MahfTa9XRLA=\", ext=\"response-specific\""
+
+{-
+-- fixme: need to change PayloadInfo to support this use case
+testServerHeader03 = testCase "generates header (pre calculated hash)" $ do
+  let hash = calculatePayloadHash creds (PayloadInfo "text/plain" "some reply")
+  -- hash becomes PayloadHash "nJjkVtBE5Y/Bk38Aiokwn0jiJxt/0S2WRSUwWLCf5xk="
+  return ()
+-}
+
+testServerHeader04 = testCase "generates header (null ext)" $ do
+  let Right (creds, user) = credsSteve
+  let arts = HeaderArtifacts
+             { haMethod = "POST"
+             , haHost = "example.com"
+             , haPort = Just 8080
+             , haResource = hrqUrl testReq4
+             , haTimestamp = 1398546787
+             , haNonce = "xUwusx"
+             , haHash = Just "nJjkVtBE5Y/Bk38Aiokwn0jiJxt/0S2WRSUwWLCf5xk="
+             , haExt = Nothing
+             , haMac = "dvIvMThwi28J61Jc3P0ryAhuKpanU63GXdx6hkmQkJA="
+             , haId = "123456"
+             , haApp = Nothing
+             , haDlg = Nothing
+             }
+      res = Right (AuthSuccess creds arts ())
+      (_, (_, hdr)) = Server.header res (Just $ PayloadInfo "text/plain" "some reply")
+  hdr @?= "Hawk mac=\"6PrybJTJs20jsgBw5eilXpcytD8kUbaIKNYXL+6g0ns=\", hash=\"f9cDF/TDm7TkYRLnGwRMfeDzT6LixQVLvrIKhh0vgmM=\""
+
+-- not relevant due to types
+--testServerHeader05 = testCase "errors on missing artifacts"
+--testServerHeader06 = testCase "errors on invalid artifacts"
+--testServerHeader07 = testCase "errors on missing credentials"
+--testServerHeader09 = testCase "errors on invalid algorithm"
+
+testServerHeader08 = testCase "errors on invalid credentials (key)" $ do
+  let Right (creds, user) = credsFred
+  let arts = HeaderArtifacts
+             { haMethod = "POST"
+             , haHost = "example.com"
+             , haPort = Just 8080
+             , haResource = hrqUrl testReq4
+             , haTimestamp = 1398546787
+             , haNonce = "xUwusx"
+             , haHash = Just "nJjkVtBE5Y/Bk38Aiokwn0jiJxt/0S2WRSUwWLCf5xk="
+             , haExt = Just "response-specific"
+             , haMac = "dvIvMThwi28J61Jc3P0ryAhuKpanU63GXdx6hkmQkJA="
+             , haId = "123456"
+             , haApp = Nothing
+             , haDlg = Nothing
+             }
+      res = Right (AuthSuccess creds arts ())
+      (_, (_, hdr)) = Server.header res (Just $ PayloadInfo "text/plain" "some reply")
+  -- fixme: header should return empty string or something because key
+  -- is too short
+  hdr @?= "Hawk mac=\"f877uh9HCdCTF/Y3hIxG0XdUAsWQDqfkPekzLasFlNY=\", hash=\"f9cDF/TDm7TkYRLnGwRMfeDzT6LixQVLvrIKhh0vgmM=\", ext=\"response-specific\""
+
 
 -- authenticateBewit()
-testServerBewit01 = testCase "errors on uri too long"
+testServerBewit01 = testCase "errors on uri too long" $ do
+  let req = testReq4
+            { hrqUrl = S8.pack ('/':take 5000 (repeat 'x'))
+            , hrqAuthorization = "Hawk id=\"1\", ts=\"1353788437\", nonce=\"k3j4h2\", mac=\"zy79QQ5/EYFmQqutVnYb73gAc/U=\", ext=\"hello\""
+            }
+  res <- Server.authenticateBewit def testCredsFunc req
+  case res of
+    Right _ -> "success" @?= "failure"
+    Left (Server.AuthFailBadRequest e _) -> e @?= "Resource path exceeds max length"
+    Left e -> show e @?= "AuthFailBadRequest _ _"
 
 -- message
 testServerMessage01 = testCase "errors on invalid authorization (ts)"
