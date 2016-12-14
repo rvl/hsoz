@@ -154,13 +154,20 @@ authenticateBewit opts getCreds hrq@HawkReq{..} = do
   where
     checkBewit :: HawkReq -> POSIXTime -> Either AuthFail Bewit
     checkBewit HawkReq{..} now = do
-      encBewit <- checkEmpty hrqBewit
       checkMethod hrqMethod
+      checkLength hrqUrl
+      encBewit <- checkEmpty hrqBewit
       checkHeader hrqAuthorization
       bewit <- mapLeft unauthorized $ decodeBewit encBewit
       checkAttrs bewit
       checkExpiry bewit now
       return bewit
+
+    -- javascript impl limits query string length to avoid a DoS
+    -- attack on string matching
+    checkLength url | BS.length url <= urlMaxLength = Right ()
+                    | otherwise = Left (badRequest "Resource path exceeds max length")
+    urlMaxLength = 4096
 
     -- need a bewit in the query string
     checkEmpty (Just "") = Left (unauthorized "Empty bewit")
