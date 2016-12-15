@@ -7,6 +7,7 @@ module Network.Hawk.Types
        , Key(..)
        , ContentType
        , PayloadInfo(..)
+       , Message(..)
        , module Network.Hawk.Algo
        ) where
 
@@ -56,3 +57,13 @@ data PayloadInfo = PayloadInfo
                    { payloadContentType :: ContentType
                    , payloadData        :: BL.ByteString
                    } deriving Show
+
+----------------------------------------------------------------------------
+
+data Message = Message
+               { msgId :: ClientId
+               , msgTimestamp :: POSIXTime
+               , msgNonce :: ByteString
+               , msgHash :: ByteString
+               , msgMac :: ByteString
+               } deriving (Show, Eq)

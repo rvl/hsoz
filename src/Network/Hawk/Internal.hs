@@ -39,7 +39,12 @@ import           Network.HTTP.Types.Method (Method)
 
 import           Network.Hawk.Types
 
-data HawkType = HawkHeader | HawkBewit | HawkResponse | HawkPayload | HawkTs
+data HawkType = HawkHeader
+              | HawkMessage
+              | HawkBewit
+              | HawkResponse
+              | HawkPayload
+              | HawkTs
               deriving (Show, Eq)
 
 -- | The value of an @Authorization@ header.
@@ -107,6 +112,7 @@ hawk1Header t = "hawk.1." <> hawkType t
 
 hawkType :: HawkType -> ByteString
 hawkType HawkHeader   = "header"
+hawkType HawkMessage  = "message"
 hawkType HawkBewit    = "bewit"
 hawkType HawkResponse = "response"
 hawkType HawkPayload  = "payload"

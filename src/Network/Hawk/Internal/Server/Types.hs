@@ -38,6 +38,10 @@ instance Show t => Show (AuthSuccess t) where
 instance Eq t => Eq (AuthSuccess t) where
   AuthSuccess c a t == AuthSuccess d b u = c == d && a == b && t == u
 
+-- | The result of an 'AuthSuccess'.
+authValue :: AuthSuccess t -> t
+authValue (AuthSuccess _ _ t) = t
+
 -- | The error message from an 'AuthFail'.
 authFailMessage :: AuthFail -> String
 authFailMessage (AuthFailBadRequest e _) = e

@@ -16,6 +16,7 @@ module Network.Hawk.Server
        -- ** Generic variants
        , authenticate
        , authenticateBewit
+       , authenticateMessage
        , HawkReq(..)
        -- ** Options for authentication
        , AuthOpts(..)
@@ -29,6 +30,7 @@ module Network.Hawk.Server
        , AuthResult'(..)
        , AuthSuccess(..)
        , AuthFail(..)
+       , authValue
        , authFailMessage
        -- * Authenticated reponses
        , header
@@ -224,26 +226,71 @@ hawkReq AuthReqOpts{..} req body = HawkReq
 -- not supplied, it can be verified later with 'authenticatePayload'.
 authenticate :: MonadIO m => AuthOpts -> CredentialsFunc m t -> HawkReq -> m (AuthResult t)
 authenticate opts getCreds req@HawkReq{..} = do
-  now <- getServerTime opts
   case parseServerAuthorizationHeader hrqAuthorization of
-    Right sah@AuthorizationHeader{..} -> do
-      creds <- getCreds sahId
-      case creds of
-        Right creds' -> do
-          nonce <- liftIO $ saCheckNonce opts (scKey (fst creds')) sahTs sahNonce
-          return $ authenticate' now opts creds' nonce req sah
-        Left e -> return $ Left (AuthFailUnauthorized e Nothing (Just (headerArtifacts req sah)))
+    Right sah -> let arts = headerArtifacts req sah
+                 in authenticateBase HawkHeader opts getCreds arts hrqPayload sah
     Left err -> return $ Left err
 
-authenticate' :: POSIXTime -> AuthOpts -> (Credentials, t) -> Bool
-              -> HawkReq -> AuthorizationHeader -> AuthResult t
-authenticate' now opts (creds, t) nonce hrq@HawkReq{..} sah@AuthorizationHeader{..} = do
-  let arts = headerArtifacts hrq sah
-      doCheck = authResult creds arts t
+authenticateMessage :: MonadIO m => AuthOpts -> CredentialsFunc m t
+                    -> ByteString -> Maybe Int -> BL.ByteString
+                    -> Message -> m (AuthResult t)
+authenticateMessage opts getCreds host port msg auth =
+  authenticateBase HawkMessage opts getCreds arts payload sah
+  where
+    arts = msgArts host port auth
+    payload = Just (PayloadInfo "" msg)
+    sah = msgAuth auth
+
+-- fixme: correspondence between Message and AuthorizationHeader
+msgAuth :: Message -> AuthorizationHeader
+msgAuth Message{..} = AuthorizationHeader
+                      { sahId = msgId
+                      , sahTs = msgTimestamp
+                      , sahNonce = msgNonce
+                      , sahMac = msgMac
+                      , sahHash = Just msgHash
+                      , sahExt = Nothing
+                      , sahApp = Nothing
+                      , sahDlg = Nothing
+                      }
+
+msgArts :: ByteString -> Maybe Int -> Message -> HeaderArtifacts
+msgArts host port Message{..} = HeaderArtifacts
+                                { haMethod = "GET"
+                                , haHost = host
+                                , haPort = port
+                                , haResource = ""
+                                , haId = ""
+                                , haTimestamp = msgTimestamp
+                                , haNonce = msgNonce
+                                , haMac = ""
+                                , haHash = Just msgHash
+                                , haExt = Nothing
+                                , haApp = Nothing
+                                , haDlg = Nothing
+                      }
+
+authenticateBase :: MonadIO m => HawkType -> AuthOpts -> CredentialsFunc m t
+                 -> HeaderArtifacts -> Maybe PayloadInfo
+                 -> AuthorizationHeader -> m (AuthResult t)
+authenticateBase ty opts getCreds arts payload sah@AuthorizationHeader{..} = do
+  now <- getServerTime opts
+  creds <- getCreds sahId
+  case creds of
+    Right creds' -> do
+      nonce <- liftIO $ saCheckNonce opts (scKey (fst creds')) sahTs sahNonce
+      return $ authenticate' ty now opts creds' nonce arts payload sah
+    Left e -> return $ Left (AuthFailUnauthorized e Nothing (Just arts))
+
+authenticate' :: HawkType -> POSIXTime -> AuthOpts -> (Credentials, t) -> Bool
+              -> HeaderArtifacts -> Maybe PayloadInfo -> AuthorizationHeader
+              -> AuthResult t
+authenticate' ty now opts (creds, t) nonce arts payload sah@AuthorizationHeader{..} = do
+  let doCheck = authResult creds arts t
       doCheckExp = authResultExp now creds arts t
-      mac = serverMac creds arts HawkHeader
+      mac = serverMac creds arts ty
   if mac `constEqBytes` sahMac then do
-    doCheck $ checkPayloadHash (scAlgorithm creds) sahHash hrqPayload
+    doCheck $ checkPayloadHash (scAlgorithm creds) sahHash payload
     doCheck $ checkNonce nonce
     doCheckExp $ checkExpiration now (saTimestampSkew opts) sahTs
     doCheck $ Right ()
