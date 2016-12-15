@@ -22,6 +22,7 @@ import Test.Tasty.HUnit (testCase)
 import Test.HUnit (Assertion, (@?=), (@?))
 import Test.Tasty.QuickCheck (testProperty)
 import Test.QuickCheck
+import Test.QuickCheck.Monadic
 
 import Network.Hawk
 import Network.Hawk.Internal.Server.Types (HawkReq(..), AuthSuccess(..))
@@ -87,7 +88,11 @@ tests = testGroup "Network.Hawk"
           , testGroup "authenticateBewit()"
             [ testServerBewit01
             ]
-
+          , testGroup "message()"
+            [ testMessages
+            , testServerMessage04
+            , testServerMessage05
+            ]
           ]
         ]
 
@@ -670,11 +675,62 @@ testServerBewit01 = testCase "errors on uri too long" $ do
     Left e -> show e @?= "AuthFailBadRequest _ _"
 
 -- message
-testServerMessage01 = testCase "errors on invalid authorization (ts)"
-testServerMessage02 = testCase "errors on invalid authorization (nonce)"
-testServerMessage03 = testCase "errors on invalid authorization (hash)"
-testServerMessage04 = testCase "errors with credentials"
-testServerMessage05 = testCase "errors on nonce collision"
+testMessages = testProperty "Client.message . Server.authenticateMessage == Right"
+  prop_messageSame
+
+prop_messageSame :: String -> Property
+prop_messageSame msg = monadicIO $ do
+  res <- run $ do
+    tm <- setupTestMessage
+    testMessage (tm { tmMsg = BL.fromStrict (S8.pack msg) })
+  assert (isRight res)
+
+data TestMessage = TestMessage
+                   { tmServerCreds :: Server.Credentials
+                   , tmClientCreds :: Client.Credentials
+                   , tmCredsFunc :: Server.CredentialsFunc IO String
+                   , tmHost :: ByteString
+                   , tmPort :: Maybe Int
+                   , tmSkew :: NominalDiffTime
+                   , tmOpts :: Server.AuthOpts
+                   , tmMsg :: BL.ByteString
+                   }
+
+setupTestMessage :: IO TestMessage
+setupTestMessage = do
+  let cf = testCredsFunc
+  Right (sc, user) <- cf "123456"
+  let cc = clientCreds "" sc
+  opts <- Server.nonceOpts 60
+  return $ TestMessage sc cc testCredsFunc "example.com" (Just 8080) 0 opts ""
+
+testMessage TestMessage{..} = do
+  auth <- Client.message tmClientCreds tmHost tmPort tmMsg tmSkew
+  Server.authenticateMessage tmOpts tmCredsFunc tmHost tmPort tmMsg auth
+
+-- because of types, these test cases are impossible
+--testServerMessage01 = testCase "errors on invalid authorization (ts)"
+--testServerMessage02 = testCase "errors on invalid authorization (nonce)"
+--testServerMessage03 = testCase "errors on invalid authorization (hash)"
+
+testServerMessage04 = testCase "errors with credentials" $ do
+  tm <- setupTestMessage
+  res <- testMessage (tm { tmCredsFunc = \i -> return (Left "something") })
+  case res of
+    Right _ -> "success" @?= "failure"
+    Left (Server.AuthFailUnauthorized e _ _) -> e @?= "something"
+    Left e -> show e @?= "AuthFailUnauthorized _ _ _"
+
+testServerMessage05 = testCase "errors on nonce collision" $ do
+  tm@TestMessage{..} <- setupTestMessage
+  auth <- Client.message tmClientCreds tmHost tmPort tmMsg tmSkew
+  res <- Server.authenticateMessage tmOpts tmCredsFunc tmHost tmPort tmMsg auth
+  Server.authValue <$> res @?= Right "steve"
+  res2 <- Server.authenticateMessage tmOpts tmCredsFunc tmHost tmPort tmMsg auth
+  isRight res2 @?= False
+  let Left e = res2
+  Server.authFailMessage e @?= "Invalid nonce"
+
 testServerMessage06 = testCase "should generate an authorization then successfully parse it"
 testServerMessage07 = testCase "should fail authorization on mismatching host"
 testServerMessage08 = testCase "should fail authorization on stale timestamp"
