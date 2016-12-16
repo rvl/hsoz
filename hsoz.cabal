@@ -34,6 +34,7 @@ library
                      , Network.Hawk.Types
                      , Network.Hawk.Server
                      , Network.Hawk.Server.Nonce
+                     , Network.Hawk.Internal.JSON
                      , Network.Hawk.Internal.Server
                      , Network.Hawk.Internal.Server.Header
                      , Network.Hawk.Internal.Server.Types

@@ -52,8 +52,8 @@ type Authorization = ByteString
 
 -- | Generates a @hawk.1.@ string with the given attributes,
 -- calculates its HMAC, and returns the Base64 encoded hash.
-calculateMac :: HawkAlgoCls a => a -> Key -> HeaderArtifacts -> HawkType -> ByteString
-calculateMac a key arts hawkType = hawkMac a key $ hawk1String hawkType arts
+calculateMac :: HawkAlgoCls a => a -> Key -> HawkType -> HeaderArtifacts -> ByteString
+calculateMac a key ty arts = hawkMac a key $ hawk1String ty arts
 
 -- This would be the same as Hoek.escapeHeaderAttribute, which
 -- replaces double quotes and backslashes so that the string can be

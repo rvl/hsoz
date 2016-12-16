@@ -124,7 +124,7 @@ authenticateBewit' (creds, t) req bewit
   | otherwise = Left (AuthFailUnauthorized "Bad mac" (Just creds) (Just arts))
   where
     arts = bewitArtifacts req bewit
-    mac = serverMac creds arts HawkBewit
+    mac = serverMac creds HawkBewit arts
 
 bewitArtifacts :: HawkReq -> Bewit -> HeaderArtifacts
 bewitArtifacts HawkReq{..} Bewit{..} =
@@ -231,9 +231,10 @@ authenticate opts getCreds req@HawkReq{..} = do
                  in authenticateBase HawkHeader opts getCreds arts hrqPayload sah
     Left err -> return $ Left err
 
+-- | Checks message authorization attributes.
 authenticateMessage :: MonadIO m => AuthOpts -> CredentialsFunc m t
                     -> ByteString -> Maybe Int -> BL.ByteString
-                    -> Message -> m (AuthResult t)
+                    -> MessageAuth -> m (AuthResult t)
 authenticateMessage opts getCreds host port msg auth =
   authenticateBase HawkMessage opts getCreds arts payload sah
   where
@@ -241,34 +242,33 @@ authenticateMessage opts getCreds host port msg auth =
     payload = Just (PayloadInfo "" msg)
     sah = msgAuth auth
 
--- fixme: correspondence between Message and AuthorizationHeader
-msgAuth :: Message -> AuthorizationHeader
-msgAuth Message{..} = AuthorizationHeader
-                      { sahId = msgId
-                      , sahTs = msgTimestamp
-                      , sahNonce = msgNonce
-                      , sahMac = msgMac
-                      , sahHash = Just msgHash
-                      , sahExt = Nothing
-                      , sahApp = Nothing
-                      , sahDlg = Nothing
-                      }
+msgAuth :: MessageAuth -> AuthorizationHeader
+msgAuth MessageAuth{..} = AuthorizationHeader
+                          { sahId = msgId
+                          , sahTs = msgTimestamp
+                          , sahNonce = msgNonce
+                          , sahMac = msgMac
+                          , sahHash = Just msgHash
+                          , sahExt = Nothing
+                          , sahApp = Nothing
+                          , sahDlg = Nothing
+                          }
 
-msgArts :: ByteString -> Maybe Int -> Message -> HeaderArtifacts
-msgArts host port Message{..} = HeaderArtifacts
-                                { haMethod = "GET"
-                                , haHost = host
-                                , haPort = port
-                                , haResource = ""
-                                , haId = ""
-                                , haTimestamp = msgTimestamp
-                                , haNonce = msgNonce
-                                , haMac = ""
-                                , haHash = Just msgHash
-                                , haExt = Nothing
-                                , haApp = Nothing
-                                , haDlg = Nothing
-                      }
+msgArts :: ByteString -> Maybe Int -> MessageAuth -> HeaderArtifacts
+msgArts host port MessageAuth{..} = HeaderArtifacts
+                                    { haMethod = ""
+                                    , haHost = host
+                                    , haPort = port
+                                    , haResource = ""
+                                    , haId = ""
+                                    , haTimestamp = msgTimestamp
+                                    , haNonce = msgNonce
+                                    , haMac = ""
+                                    , haHash = Just msgHash
+                                    , haExt = Nothing
+                                    , haApp = Nothing
+                                    , haDlg = Nothing
+                                    }
 
 authenticateBase :: MonadIO m => HawkType -> AuthOpts -> CredentialsFunc m t
                  -> HeaderArtifacts -> Maybe PayloadInfo
@@ -288,7 +288,7 @@ authenticate' :: HawkType -> POSIXTime -> AuthOpts -> (Credentials, t) -> Bool
 authenticate' ty now opts (creds, t) nonce arts payload sah@AuthorizationHeader{..} = do
   let doCheck = authResult creds arts t
       doCheckExp = authResultExp now creds arts t
-      mac = serverMac creds arts ty
+      mac = serverMac creds ty arts
   if mac `constEqBytes` sahMac then do
     doCheck $ checkPayloadHash (scAlgorithm creds) sahHash payload
     doCheck $ checkNonce nonce

@@ -7,7 +7,7 @@ module Network.Hawk.Types
        , Key(..)
        , ContentType
        , PayloadInfo(..)
-       , Message(..)
+       , MessageAuth(..)
        , module Network.Hawk.Algo
        ) where
 
@@ -60,10 +60,11 @@ data PayloadInfo = PayloadInfo
 
 ----------------------------------------------------------------------------
 
-data Message = Message
-               { msgId :: ClientId
-               , msgTimestamp :: POSIXTime
-               , msgNonce :: ByteString
-               , msgHash :: ByteString
-               , msgMac :: ByteString
-               } deriving (Show, Eq)
+-- | Authorization attributes for a Hawk message.
+data MessageAuth = MessageAuth
+                   { msgId        :: ClientId   -- ^ User identifier.
+                   , msgTimestamp :: POSIXTime  -- ^ Message time.
+                   , msgNonce     :: ByteString -- ^ Nonce string.
+                   , msgHash      :: ByteString -- ^ Message hash.
+                   , msgMac :: ByteString -- ^ Hash of all message parameters.
+                   } deriving (Show, Eq)

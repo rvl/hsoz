@@ -98,10 +98,8 @@ headerOz url method creds payload skew ext app dlg =
 
 headerBase :: Text -> Method -> Credentials -> Maybe PayloadInfo -> NominalDiffTime
            -> Maybe ExtData -> Maybe Text -> Maybe Text -> IO Header
-headerBase url method creds payload skew ext app dlg = do
-  now <- getPOSIXTime
-  nonce <- genNonce
-  return $ headerBase' url method creds payload skew ext app dlg now nonce
+headerBase url method creds payload skew ext app dlg =
+  headerBase' url method creds payload skew ext app dlg <$> getPOSIXTime <*> genNonce
 
 headerBase' :: Text -> Method -> Credentials
             -> Maybe PayloadInfo -> NominalDiffTime
@@ -111,28 +109,27 @@ headerBase' url method creds payload skew ext app dlg ts nonce = let
   arts = header' HawkHeader url method creds payload skew ext app dlg ts nonce
   in Header (clientHawkAuth arts) arts
 
+-- | Generates an authorization object for a message.
 message :: Credentials     -- ^ Credentials for encryption
         -> ByteString      -- ^ Destination host
         -> Maybe Int       -- ^ Destination port
         -> BL.ByteString   -- ^ The message
         -> NominalDiffTime -- ^ Time offset to sync with server time
-        -> IO Message
-message creds host port msg skew = do
-  now <- getPOSIXTime
-  nonce <- genNonce
-  return $ message' creds host port msg skew now nonce
+        -> IO MessageAuth
+message creds host port msg skew =
+  message' creds host port msg skew <$> getPOSIXTime <*> genNonce
 
 message' creds host port msg skew ts nonce = artsMsg creds arts
   where
-    arts = HeaderArtifacts "GET" host port "" (ccId creds) ts' nonce "" (Just hash) Nothing Nothing Nothing
+    arts = HeaderArtifacts "" host port "" (ccId creds) ts' nonce "" (Just hash) Nothing Nothing Nothing
     hash = calculatePayloadHash (ccAlgorithm creds) payload
     payload = PayloadInfo "" msg
     ts' = ts + skew
 
-artsMsg :: Credentials -> HeaderArtifacts -> Message
-artsMsg creds arts@HeaderArtifacts{..} = Message haId haTimestamp haNonce hash mac
+artsMsg :: Credentials -> HeaderArtifacts -> MessageAuth
+artsMsg creds arts@HeaderArtifacts{..} = MessageAuth haId haTimestamp haNonce hash mac
   where
-    mac = clientMac HawkMessage creds arts
+    mac = clientMac creds HawkMessage arts
     hash = fromMaybe "" haHash
 
 header' :: HawkType -> Text -> Method -> Credentials
@@ -141,19 +138,19 @@ header' :: HawkType -> Text -> Method -> Credentials
         -> POSIXTime -> ByteString -> HeaderArtifacts
 header' ty url method creds payload skew ext app dlg ts nonce = arts
   where
-    -- fixme: recursive definition
-    arts = clientHeaderArtifacts ts' nonce method (encodeUtf8 url)
+    arts = headerArtifacts ts' nonce method (encodeUtf8 url)
       hash ext app dlg (ccId creds) mac
     hash = calculatePayloadHash (ccAlgorithm creds) <$> payload
-    mac  = clientMac ty creds arts
+    mac  = clientMac creds ty arts
     ts'  = ts + skew
 
-clientHeaderArtifacts :: POSIXTime -> ByteString -> Method -> ByteString
-                      -> Maybe ByteString -> Maybe ByteString
-                      -> Maybe Text -> Maybe Text
-                      -> ClientId -> ByteString
-                      -> HeaderArtifacts
-clientHeaderArtifacts now nonce method url hash ext app dlg cid mac =
+-- | Constructs artifacts bundle from header params.
+headerArtifacts :: POSIXTime -> ByteString -> Method -> ByteString
+                -> Maybe ByteString -> Maybe ByteString
+                -> Maybe Text -> Maybe Text
+                -> ClientId -> ByteString
+                -> HeaderArtifacts
+headerArtifacts now nonce method url hash ext app dlg cid mac =
   HeaderArtifacts method host port resource cid now nonce mac hash ext app dlg
   where
     (SplitURL host port resource) = fromMaybe relUrl $ splitUrl url
@@ -172,8 +169,8 @@ clientHawkAuth arts@HeaderArtifacts{..} = hawkHeaderString (hawkHeaderItems item
             , ("dlg",   encodeUtf8 <$> haDlg)
             ]
 
-clientMac :: HawkType -> Credentials -> HeaderArtifacts -> ByteString
-clientMac h Credentials{..} arts = calculateMac ccAlgorithm ccKey arts h
+clientMac :: Credentials -> HawkType -> HeaderArtifacts -> ByteString
+clientMac Credentials{..} = calculateMac ccAlgorithm ccKey
 
 hawkHeaderItems :: [(ByteString, Maybe ByteString)] -> [(ByteString, ByteString)]
 hawkHeaderItems = catMaybes . map pull
@@ -266,7 +263,7 @@ checkServerAuthorizationHeader _ _ ServerAuthorizationNotRequired _ Nothing = Ri
 checkServerAuthorizationHeader _ _ ServerAuthorizationRequired _ Nothing = Left "Missing Server-Authorization header"
 checkServerAuthorizationHeader creds arts _ now (Just sa) = do
   sarh <- parseServerAuthorizationReplyHeader sa
-  let mac = clientMac HawkResponse creds arts
+  let mac = clientMac creds HawkResponse arts
   if sarhMac sarh `constEqBytes` mac
     then Right (Just sarh)
     else Left "Bad response mac"
@@ -296,7 +293,7 @@ bewitArtifacts uri exp ext = make <$> splitUrl uri
 
 encodeBewit :: Credentials -> HeaderArtifacts -> ByteString
 encodeBewit creds arts = bewitString (ccId creds) (haTimestamp arts) mac (haExt arts)
-  where mac = clientMac HawkBewit creds arts
+  where mac = clientMac creds HawkBewit arts
 
 -- | Constructs a bewit: @id\exp\mac\ext@
 bewitString :: ClientId -> POSIXTime -> ByteString -> Maybe ExtData -> ByteString

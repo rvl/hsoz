@@ -8,5 +8,5 @@ import Network.Hawk.Types
 import Network.Hawk.Internal.Server.Types
 import Network.Hawk.Internal
 
-serverMac :: Credentials -> HeaderArtifacts -> HawkType -> ByteString
-serverMac Credentials{..} arts = calculateMac scAlgorithm scKey arts
+serverMac :: Credentials -> HawkType -> HeaderArtifacts -> ByteString
+serverMac Credentials{..} = calculateMac scAlgorithm scKey
