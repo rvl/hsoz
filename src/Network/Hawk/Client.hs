@@ -56,7 +56,8 @@ import           Network.HTTP.Client       (Request, requestHeaders, requestBody
 import           Network.HTTP.Client       (HttpException(..))
 import           URI.ByteString            (authorityHost, authorityPort,
                                             hostBS, laxURIParserOptions,
-                                            parseURI, portNumber, uriAuthority)
+                                            parseURI, portNumber, uriAuthority,
+                                            uriScheme, schemeBS)
 import           Data.Typeable             (Typeable)
 import           Control.Exception         (Exception, throwIO)
 import           Control.Monad.Catch       as E (MonadThrow(..), MonadCatch(..), handle)
@@ -151,10 +152,11 @@ headerArtifacts :: POSIXTime -> ByteString -> Method -> ByteString
                 -> ClientId -> ByteString
                 -> HeaderArtifacts
 headerArtifacts now nonce method url hash ext app dlg cid mac =
-  HeaderArtifacts method host port resource cid now nonce mac hash ext app dlg
+  HeaderArtifacts method host (Just port') resource cid now nonce mac hash ext app dlg
   where
-    (SplitURL host port resource) = fromMaybe relUrl $ splitUrl url
-    relUrl = SplitURL "" Nothing url
+    s@(SplitURL _ host port resource) = fromMaybe relUrl $ splitUrl url
+    relUrl = SplitURL HTTP "" Nothing url
+    port' = urlPort' s
 
 clientHawkAuth :: HeaderArtifacts -> ByteString
 clientHawkAuth arts@HeaderArtifacts{..} = hawkHeaderString (hawkHeaderItems items)
@@ -179,13 +181,16 @@ hawkHeaderItems = catMaybes . map pull
     pull (k, Nothing) = Nothing
 
 splitUrl :: ByteString -> Maybe SplitURL
-splitUrl url = SplitURL <$> host <*> pure port <*> path
+splitUrl url = SplitURL s <$> host <*> pure port <*> path
   where
-    p = either (const Nothing) uriAuthority (parseURI laxURIParserOptions url)
-    host = fmap (hostBS . authorityHost) p
+    p = either (const Nothing) Just (parseURI laxURIParserOptions url)
+    a = p >>= uriAuthority
+    https = fmap (schemeBS . uriScheme) p == Just "https"
+    s = if https then HTTPS else HTTP
+    host = fmap (hostBS . authorityHost) a
     port :: Maybe Int
-    port = fmap portNumber $ p >>= authorityPort
-    path = fmap (const (extractPath url)) p
+    port = fmap portNumber (a >>= authorityPort)
+    path = fmap (const (extractPath url)) a
 
 genNonce :: IO ByteString
 genNonce = takeRandom 10 <$> getSystemDRG
@@ -288,7 +293,7 @@ getBewit creds ttl ext offset uri = do
 
 bewitArtifacts :: ByteString -> POSIXTime -> Maybe ExtData -> Maybe HeaderArtifacts
 bewitArtifacts uri exp ext = make <$> splitUrl uri
-  where make (SplitURL host port resource) =
+  where make (SplitURL s host port resource) =
           HeaderArtifacts "GET" host port resource "" exp "" "" Nothing ext Nothing Nothing
 
 encodeBewit :: Credentials -> HeaderArtifacts -> ByteString

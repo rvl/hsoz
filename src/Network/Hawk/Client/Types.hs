@@ -26,8 +26,19 @@ data Header = Header
   , hdrArtifacts :: HeaderArtifacts  -- ^ The parameters used to generate the header.
   } deriving (Show, Generic)
 
+data Scheme = HTTP | HTTPS deriving (Show, Eq)
+
 data SplitURL = SplitURL
-  { urlHost :: ByteString
-  , urlPort :: Maybe Int
-  , urlPath :: ByteString
+  { urlScheme :: Scheme   -- ^ If URL uses the @https@ scheme.
+  , urlHost :: ByteString -- ^ Hostname or IP.
+  , urlPort :: Maybe Int  -- ^ Port, if given in URL.
+  , urlPath :: ByteString -- ^ Everything after the hostname and port.
   } deriving (Show, Generic)
+
+defaultPort :: Scheme -> Int
+defaultPort HTTP  =  80
+defaultPort HTTPS = 443
+
+urlPort' :: SplitURL -> Int
+urlPort' (SplitURL s _ Nothing _)  = defaultPort s
+urlPort' (SplitURL _ _ (Just p) _) = p

@@ -34,6 +34,7 @@ type ExtData = ByteString
 -- implementation of Hawk.
 data HeaderArtifacts = HeaderArtifacts
   { haMethod    :: Method           -- ^ Signed request method
+  -- fixme: replace host/port/resource with SplitURL
   , haHost      :: ByteString       -- ^ Request host
   , haPort      :: Maybe Int        -- ^ Request port
   , haResource  :: ByteString       -- ^ Request path and query params
