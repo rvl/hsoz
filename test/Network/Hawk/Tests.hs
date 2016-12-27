@@ -8,6 +8,7 @@ import Data.Default
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as S8
 import qualified Data.ByteString.Lazy as BL
+import Data.Text (Text)
 import Network.Wai (Request(..), defaultRequest)
 import Network.HTTP.Client (Response(..))
 import Network.HTTP.Client.Internal (Response(..))
@@ -51,9 +52,8 @@ tests = testGroup "Network.Hawk"
           , test09
           , testWWWAuthenticate
           ]
-        , testGroup "header" [ testHeader01 ]
         , testGroup "Server"
-          [ testGroup "authenticate()"
+          [ testGroup "authenticate"
             [ testServerAuth01
             , testServerAuth02
             , testServerAuth05
@@ -79,20 +79,33 @@ tests = testGroup "Network.Hawk"
             -- , testServerAuth30
             , testServerAuth32
             ]
-          , testGroup "header()"
+          , testGroup "header"
             [ testServerHeader01
             , testServerHeader02
             , testServerHeader04
             , testServerHeader08
             ]
-          , testGroup "authenticateBewit()"
+          , testGroup "authenticateBewit"
             [ testServerBewit01
             ]
-          , testGroup "message()"
+          , testGroup "message"
             [ testMessages
             , testServerMessage04
             , testServerMessage05
             ]
+          ]
+        , testGroup "Client"
+          [ testGroup "header"
+            [ testClientHeader01
+            , testClientHeader02
+            , testClientHeader03
+            , testClientHeader05
+            , testClientHeader06
+            --, testClientHeader07
+            --, testClientHeader09
+            ]
+          , testGroup "authenticate" []
+          , testGroup "message" []
           ]
         ]
 
@@ -367,9 +380,6 @@ test09 = testCase "generates a header for one resource then fail to authenticate
 missing, boring :: Assertion
 missing = return ()
 boring = return ()
-
-testHeader01 = testCase "returns a valid authorization header (sha1)" $ do
-  return ()
 
 testReq1 = def { hrqUrl = "/resource/1?b=1&a=2"
                , hrqHost = "example.com"
@@ -745,3 +755,99 @@ testServerMessage16 = testCase "should fail authorization on invalid credentials
 testServerMessage17 = testCase "should fail on missing host"
 testServerMessage18 = testCase "should fail on missing credentials"
 testServerMessage19 = testCase "should fail on invalid algorithm"
+
+
+testClientUrl1 = "http://example.net/somewhere/over/the/rainbow"
+testClientUrl2 = "https://example.net/somewhere/over/the/rainbow"
+testClientCreds1 = Client.Credentials "123456" "2983d45yun89q" (HawkAlgo SHA1)
+testClientCreds2 = Client.Credentials "123456" "2983d45yun89q" (HawkAlgo SHA256)
+testPayload1 = PayloadInfo "" "something to write about"
+testPayload2 = PayloadInfo "text/plain" "something to write about"
+testPayload3 = PayloadInfo "text/plain" ""
+
+testClientExt = "Bazinga!"
+
+data TestClient = TestClient
+                  { tcUrl :: Text
+                  , tcMethod :: ByteString
+                  , tcCreds :: Client.Credentials
+                  , tcPayload :: Maybe PayloadInfo
+                  , tcSkew :: NominalDiffTime
+                  , tcExt :: Maybe ExtData
+                  , tcTimestamp :: POSIXTime
+                  , tcNonce :: ByteString
+                  }
+
+instance Default TestClient where
+  def = TestClient testClientUrl2 "POST" testClientCreds2 (Just testPayload2) 0 (Just testClientExt) 1353809207 "Ygvqdz"
+
+testClientHeader TestClient{..} = Client.hdrField $ Client.headerBase' tcUrl tcMethod tcCreds tcPayload tcSkew tcExt Nothing Nothing tcTimestamp tcNonce
+
+testClientHeader01 = testCase "returns a valid authorization header (sha1)" $ do
+  let hdr = testClientHeader (def { tcUrl = testClientUrl1, tcCreds = testClientCreds1, tcPayload = Just testPayload1 })
+  hdr @?= "Hawk id=\"123456\", ts=\"1353809207\", nonce=\"Ygvqdz\", hash=\"bsvY3IfUllw6V5rvk4tStEvpBhE=\", ext=\"Bazinga!\", mac=\"qbf1ZPG/r/e06F4ht+T77LXi5vw=\""
+
+testClientHeader02 = testCase "returns a valid authorization header (sha256)" $ do
+  let hdr = testClientHeader def
+  hdr @?= "Hawk id=\"123456\", ts=\"1353809207\", nonce=\"Ygvqdz\", hash=\"2QfCt3GuY9HQnHWyWD3wX68ZOKbynqlfYmuO2ZBRqtY=\", ext=\"Bazinga!\", mac=\"q1CwFoSHzPZSkbIvl0oYlD+91rBUEvFk763nMjMndj8=\""
+
+testClientHeader03 = testCase "returns a valid authorization header (no ext)" $ do
+  let hdr = testClientHeader (def { tcExt = Nothing })
+  hdr @?= "Hawk id=\"123456\", ts=\"1353809207\", nonce=\"Ygvqdz\", hash=\"2QfCt3GuY9HQnHWyWD3wX68ZOKbynqlfYmuO2ZBRqtY=\", mac=\"HTgtd0jPI6E4izx8e4OHdO36q00xFCU0FolNq3RiCYs=\""
+
+-- don't need this test because of types
+-- testClientHeader04 = testCase "returns a valid authorization header (null ext)"
+
+testClientHeader05 = testCase "returns a valid authorization header (empty payload)" $ do
+  let hdr = testClientHeader (def { tcPayload = Just testPayload3, tcExt = Nothing })
+  hdr @?= "Hawk id=\"123456\", ts=\"1353809207\", nonce=\"Ygvqdz\", hash=\"q/t+NNAkQZNlq/aAD6PlexImwQTxwgT2MahfTa9XRLA=\", mac=\"U5k16YEzn3UnBHKeBzsDXn067Gu3R4YaY6xOt9PYRZM=\""
+
+testClientHeader06 = testCase "returns a valid authorization header (pre hashed payload)" $ do
+  let hash = calculatePayloadHash (HawkAlgo SHA256) testPayload2
+      -- fixme: use precalculated hash
+      hdr = testClientHeader (def { tcPayload = Just testPayload2, tcExt = Nothing })
+  hdr @?= "Hawk id=\"123456\", ts=\"1353809207\", nonce=\"Ygvqdz\", hash=\"2QfCt3GuY9HQnHWyWD3wX68ZOKbynqlfYmuO2ZBRqtY=\", mac=\"HTgtd0jPI6E4izx8e4OHdO36q00xFCU0FolNq3RiCYs=\""
+
+testClientHeader07 = testCase "errors on missing uri" $ do
+  let hdr = testClientHeader (def { tcUrl = "" })
+  hdr @?= ""
+
+-- js impl tests supply a number instead of string url
+-- testClientHeader08 = testCase "errors on invalid uri"
+
+testClientHeader09 = testCase "errors on missing method" $ do
+  let hdr = testClientHeader (def { tcMethod = "" })
+  hdr @?= ""
+
+-- js impl tests supply a number instead of string
+--testClientHeader10 = testCase "errors on invalid method"
+
+-- not needed because of types
+-- testClientHeader11 = testCase "errors on missing options"
+-- testClientHeader12 = testCase "errors on invalid credentials (id)"
+-- testClientHeader13 = testCase "errors on missing credentials"
+-- testClientHeader14 = testCase "errors on invalid credentials"
+-- testClientHeader15 = testCase "errors on invalid algorithm"
+
+testClientAuth01 = testCase "returns false on invalid header"
+testClientAuth02 = testCase "returns false on invalid header (callback)"
+testClientAuth03 = testCase "returns false on invalid mac"
+testClientAuth04 = testCase "returns true on ignoring hash"
+testClientAuth05 = testCase "validates response payload"
+testClientAuth06 = testCase "validates response payload (callback)"
+testClientAuth07 = testCase "errors on invalid response payload"
+testClientAuth08 = testCase "fails on invalid WWW-Authenticate header format"
+testClientAuth09 = testCase "fails on invalid WWW-Authenticate header format"
+testClientAuth10 = testCase "skips tsm validation when missing ts"
+
+
+testClientMessage01 = testCase "generates authorization"
+testClientMessage02 = testCase "errors on invalid host"
+testClientMessage03 = testCase "errors on invalid port"
+testClientMessage04 = testCase "errors on missing host"
+testClientMessage05 = testCase "errors on null message"
+testClientMessage06 = testCase "errors on missing message"
+testClientMessage07 = testCase "errors on invalid message"
+testClientMessage08 = testCase "errors on missing options"
+testClientMessage09 = testCase "errors on invalid credentials (id)"
+testClientMessage10 = testCase "errors on invalid credentials (key)"

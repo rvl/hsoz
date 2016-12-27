@@ -21,6 +21,7 @@ module Network.Hawk.Client
        , authenticate
        , header
        , headerOz
+       , headerBase'  -- fixme: use Internal module
        , getBewit
        , message
        -- ** Types
