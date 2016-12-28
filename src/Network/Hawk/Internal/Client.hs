@@ -2,6 +2,12 @@
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 
+-- | Note that this is essentially the "kitchen sink" export module,
+-- including many functions intended only to be used internally by
+-- this package. No API stability is guaranteed for this module. If
+-- you see functions here which you believe should be promoted to a
+-- stable API, please contact the author.
+
 module Network.Hawk.Internal.Client where
 
 import           Control.Monad.IO.Class    (MonadIO, liftIO)
@@ -42,8 +48,8 @@ import           Network.Hawk.Internal
 import           Network.Hawk.Types
 import           Network.Hawk.Util
 import           Network.Iron.Util
-import           Network.Hawk.Client.Types
-import           Network.Hawk.Client.HeaderParser
+import           Network.Hawk.Internal.Client.Types
+import           Network.Hawk.Internal.Client.HeaderParser
 
 -- | Generates the Hawk authentication header for a request.
 header :: Text -- ^ The request URL

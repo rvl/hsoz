@@ -26,6 +26,6 @@ module Network.Hawk.Client
        ) where
 
 import Network.Hawk.Internal.Client
-import Network.Hawk.Client.Types
+import Network.Hawk.Internal.Client.Types
 import Network.Hawk.Types
 import Network.Hawk.Internal

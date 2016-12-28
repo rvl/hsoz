@@ -1,6 +1,6 @@
 -- | Internal module.
 
-module Network.Hawk.Client.HeaderParser
+module Network.Hawk.Internal.Client.HeaderParser
   ( parseWwwAuthenticateHeader
   , parseServerAuthorizationReplyHeader
   , WwwAuthenticateHeader(..)
@@ -9,7 +9,7 @@ module Network.Hawk.Client.HeaderParser
 
 import Data.ByteString (ByteString)
 import Data.Time.Clock.POSIX     (POSIXTime)
-import Network.Hawk.Client.Types
+import Network.Hawk.Internal.Client.Types
 import Control.Monad (join)
 
 import Network.Hawk.Util

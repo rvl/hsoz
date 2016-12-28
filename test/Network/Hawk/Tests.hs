@@ -31,7 +31,7 @@ import Network.Hawk.Internal.Server.Header (timestampMessage)
 import Network.Hawk.Internal (calculatePayloadHash)
 import qualified Network.Hawk.Internal.Client as Client (headerBase')
 import qualified Network.Hawk.Client as Client
-import qualified Network.Hawk.Client.HeaderParser as Client
+import qualified Network.Hawk.Internal.Client.HeaderParser as Client
 import qualified Network.Hawk.Server as Server
 import qualified Network.Hawk.Types as Hawk (HeaderArtifacts(..))
 import qualified Network.Hawk.Server.Nonce as Server

@@ -2,7 +2,7 @@
 
 -- | Consider this module to be internal, and don't import directly.
 
-module Network.Hawk.Client.Types where
+module Network.Hawk.Internal.Client.Types where
 
 import           Data.Text (Text)
 import           Data.ByteString (ByteString)

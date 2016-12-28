@@ -34,15 +34,15 @@ library
                      , Network.Hawk.Types
                      , Network.Hawk.Server
                      , Network.Hawk.Server.Nonce
-                     , Network.Hawk.Internal.Client
                      , Network.Hawk.Internal.JSON
                      , Network.Hawk.Internal.Server
                      , Network.Hawk.Internal.Server.Header
                      , Network.Hawk.Internal.Server.Types
                      , Network.Hawk.Middleware
                      , Network.Hawk.Client
-                     , Network.Hawk.Client.HeaderParser
-                     , Network.Hawk.Client.Types
+                     , Network.Hawk.Internal.Client
+                     , Network.Hawk.Internal.Client.HeaderParser
+                     , Network.Hawk.Internal.Client.Types
                      , Network.Hawk.URI
                      , Network.Oz
                      , Network.Oz.Application
