@@ -42,7 +42,7 @@ import           URI.ByteString            (authorityHost, authorityPort,
 import           Data.Typeable             (Typeable)
 import           Control.Exception         (Exception, throwIO)
 import           Control.Monad.Catch       as E (MonadThrow(..), MonadCatch(..), handle)
-import           Control.Monad             (join)
+import           Control.Monad             (join, void)
 
 import           Network.Hawk.Internal
 import           Network.Hawk.Types
@@ -190,24 +190,25 @@ authenticate :: Response body -- ^ Response from server.
              -> HeaderArtifacts -- ^ The result of 'sign'.
              -> Maybe BL.ByteString -- ^ Optional payload body from response.
              -> ServerAuthorizationCheck -- ^ Whether a valid @Server-Authorization@ header is required.
-             -> IO (Either String ()) -- ^ Error message if authentication failed.
+             -> IO (Either String (Maybe ServerAuthorizationHeader)) -- ^ Error message if authentication failed.
 authenticate r creds artifacts payload saCheck = do
   now <- getPOSIXTime
   return $ authenticate' r creds artifacts payload saCheck now
 
 authenticate' :: Response body -> Credentials -> HeaderArtifacts
               -> Maybe BL.ByteString -> ServerAuthorizationCheck
-              -> POSIXTime -> Either String ()
-authenticate' r creds artifacts payload saCheck now = do
+              -> POSIXTime -> Either String (Maybe ServerAuthorizationHeader)
+authenticate' r creds arts payload saCheck now = do
   let w = responseHeader hWWWAuthenticate r
   ts <- mapM (checkWwwAuthenticateHeader creds) w
   let sa = responseHeader hServerAuthorization r
-  sarh <- checkServerAuthorizationHeader creds artifacts saCheck now sa
+  msah <- checkServerAuthorizationHeader creds arts saCheck now sa
   let ct = fromMaybe "" $ responseHeader hContentType r
   let payload' = PayloadInfo ct <$> payload
-  case sarh of
-    Just sarh' -> checkPayloadHash (ccAlgorithm creds) (sarhHash sarh') payload'
-    Nothing -> Right ()
+  case msah of
+    Just sah -> checkPayloadHash (ccAlgorithm creds) (sahHash sah) payload'
+    Nothing -> return ()
+  return msah
 
 -- fixme: lens version from wreq is better
 responseHeader :: HeaderName -> Response body -> Maybe ByteString
@@ -233,26 +234,39 @@ responseHeader h = lookup h . responseHeaders
 --   has been verified, or
 -- * the `tsm` MAC digest calculated using the same client credentials
 --   over the timestamp has been verified.
-checkWwwAuthenticateHeader :: Credentials -> ByteString -> Either String POSIXTime
-checkWwwAuthenticateHeader creds w = do
-  WwwAuthenticateHeader{..} <- parseWwwAuthenticateHeader w
-  let tsm = calculateTsMac (ccAlgorithm creds) wahTs
-  if wahTsm `constEqBytes` tsm
-    then Right wahTs
-    else Left "Invalid server timestamp hash"
+checkWwwAuthenticateHeader :: Credentials -> ByteString -> Either String (Maybe POSIXTime)
+checkWwwAuthenticateHeader creds w = parseWwwAuthenticateHeader w >>= check
+  where
+    check h | tsm `tsmEq` (wahTsm h) = Right (wahTs h)
+            | otherwise = Left "Invalid server timestamp hash"
+      where tsm = calculateTsMac (ccAlgorithm creds) <$> wahTs h
+
+    tsmEq :: Maybe ByteString -> Maybe ByteString -> Bool
+    tsmEq (Just a) (Just b) = a `constEqBytes` b
+    tsmEq (Just _) Nothing  = False
+    tsmEq _        _        = True
 
 checkServerAuthorizationHeader :: Credentials -> HeaderArtifacts
                                -> ServerAuthorizationCheck -> POSIXTime
                                -> Maybe ByteString
-                               -> Either String (Maybe ServerAuthorizationReplyHeader)
+                               -> Either String (Maybe ServerAuthorizationHeader)
 checkServerAuthorizationHeader _ _ ServerAuthorizationNotRequired _ Nothing = Right Nothing
 checkServerAuthorizationHeader _ _ ServerAuthorizationRequired _ Nothing = Left "Missing Server-Authorization header"
-checkServerAuthorizationHeader creds arts _ now (Just sa) = do
-  sarh <- parseServerAuthorizationReplyHeader sa
-  let mac = clientMac creds HawkResponse arts
-  if sarhMac sarh `constEqBytes` mac
-    then Right (Just sarh)
-    else Left "Bad response mac"
+checkServerAuthorizationHeader creds arts _ now (Just sa) =
+  parseServerAuthorizationHeader sa >>= check
+  where check sah | sahMac sah `constEqBytes` mac = Right (Just sah)
+                  | otherwise = Left "Bad response mac"
+          where
+            arts' = responseArtifacts sah arts
+            mac = clientMac creds HawkResponse arts'
+
+-- | Updates the artifacts which were used for client authentication
+-- with values from there server's response.
+responseArtifacts :: ServerAuthorizationHeader -> HeaderArtifacts -> HeaderArtifacts
+responseArtifacts ServerAuthorizationHeader{..} arts = arts { haMac  = sahMac
+                                                            , haExt  = sahExt
+                                                            , haHash = sahHash
+                                                            }
 
 ----------------------------------------------------------------------------
 
@@ -377,13 +391,13 @@ doSignedRequest skew creds ext payload ck http req = do
 -- | Authenticates the server's response if required.
 authResponse :: MonadIO m => Credentials -> HeaderArtifacts
              -> ServerAuthorizationCheck
-             -> Response body -> m (Either String ())
+             -> Response body -> m (Either String (Maybe ServerAuthorizationHeader))
 authResponse creds arts ck resp = do
   let body = Nothing -- Just $ getResponseBody r
   case ck of
     ServerAuthorizationRequired ->
       liftIO $ authenticate resp creds arts body ck
-    ServerAuthorizationNotRequired -> return (Right ())
+    ServerAuthorizationNotRequired -> return (Right Nothing)
 
 wasStale :: Request -> Credentials -> ResponseHeaders -> Status -> Maybe NominalDiffTime
 wasStale req creds hdrs s
@@ -393,7 +407,7 @@ wasStale req creds hdrs s
 -- | Gets the WWW-Authenticate header value and returns the server
 -- timestamp, if the response contains an authenticated timestamp.
 hawkTs :: Credentials -> ResponseHeaders -> Maybe POSIXTime
-hawkTs creds = join . fmap parseTs . wwwAuthenticate
+hawkTs creds = join . join . fmap parseTs . wwwAuthenticate
   where
     wwwAuthenticate = lookup hWWWAuthenticate
     parseTs = rightJust . checkWwwAuthenticateHeader creds

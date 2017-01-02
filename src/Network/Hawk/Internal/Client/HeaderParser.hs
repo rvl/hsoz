@@ -2,9 +2,9 @@
 
 module Network.Hawk.Internal.Client.HeaderParser
   ( parseWwwAuthenticateHeader
-  , parseServerAuthorizationReplyHeader
+  , parseServerAuthorizationHeader
   , WwwAuthenticateHeader(..)
-  , ServerAuthorizationReplyHeader(..)
+  , ServerAuthorizationHeader(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -17,38 +17,41 @@ import Network.Hawk.Util
 -- | Represents the @WWW-Authenticate@ header which the server uses to
 -- respond when the client isn't authenticated.
 data WwwAuthenticateHeader = WwwAuthenticateHeader
-                             { wahTs    :: POSIXTime  -- ^ server's timestamp
-                             , wahTsm   :: ByteString -- ^ timestamp mac
-                             , wahError :: ByteString
+                             { wahError :: ByteString       -- ^ Error message
+                             , wahTs    :: Maybe POSIXTime  -- ^ Server's timestamp
+                             , wahTsm   :: Maybe ByteString -- ^ Timestamp mac
                              } deriving Show
 
 -- | Represents the @Server-Authorization@ header which the server
 -- sends back to the client.
-data ServerAuthorizationReplyHeader = ServerAuthorizationReplyHeader
-                                      { sarhMac  :: ByteString
-                                      , sarhHash :: Maybe ByteString -- ^ optional payload hash
-                                      , sarhExt  :: Maybe ByteString
-                                      } deriving Show
+data ServerAuthorizationHeader = ServerAuthorizationHeader
+                                 { sahMac  :: ByteString
+                                 , sahHash :: Maybe ByteString -- ^ optional payload hash
+                                 , sahExt  :: Maybe ByteString
+                                 } deriving (Show, Eq)
 
 parseWwwAuthenticateHeader :: ByteString -> Either String WwwAuthenticateHeader
 parseWwwAuthenticateHeader = fmap snd . parseHeader wwwKeys wwwAuthHeader
 
-parseServerAuthorizationReplyHeader :: ByteString -> Either String ServerAuthorizationReplyHeader
-parseServerAuthorizationReplyHeader = fmap snd . parseHeader serverKeys serverAuthReplyHeader
+parseServerAuthorizationHeader :: ByteString -> Either String ServerAuthorizationHeader
+parseServerAuthorizationHeader = fmap snd . parseHeader serverKeys serverAuthReplyHeader
 
-wwwKeys = ["tsm", "ts", "error"]
+wwwKeys = ["error", "tsm", "ts"]
 serverKeys = ["mac", "ext", "hash"]
 
 wwwAuthHeader :: AuthAttrs -> Either String WwwAuthenticateHeader
 wwwAuthHeader m = do
-  credTs <- join (readTs <$> authAttr m "ts")
-  credTsm <- authAttr m "tsm"
-  credError <- authAttr m "error"
-  return $ WwwAuthenticateHeader credTs credTsm credError
+  err <- authAttr m "error"
+  case authAttrMaybe m "ts" of
+    Just ts' -> do
+      ts <- readTs ts'
+      tsm <- authAttr m "tsm"
+      return $ WwwAuthenticateHeader err (Just ts) (Just tsm)
+    Nothing -> return $ WwwAuthenticateHeader err Nothing Nothing
 
-serverAuthReplyHeader :: AuthAttrs -> Either String ServerAuthorizationReplyHeader
+serverAuthReplyHeader :: AuthAttrs -> Either String ServerAuthorizationHeader
 serverAuthReplyHeader m = do
   mac <- authAttr m "mac"
   let hash = authAttrMaybe m "hash"
   let ext = authAttrMaybe m "ext"
-  return $ ServerAuthorizationReplyHeader mac hash ext
+  return $ ServerAuthorizationHeader mac hash ext
