@@ -4,7 +4,7 @@ module Network.Hawk.Internal.JSON where
 import qualified Data.ByteString.Char8 as S8
 import Data.Aeson
 import Data.Aeson.Types (typeMismatch)
-import Network.Hawk.Types (MessageAuth(..))
+import Network.Hawk.Internal.Types (MessageAuth(..))
 
 instance ToJSON MessageAuth where
   toJSON MessageAuth{..} = object

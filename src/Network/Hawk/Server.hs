@@ -34,7 +34,6 @@ module Network.Hawk.Server
        , authFailMessage
        -- * Authenticated reponses
        , header
-       , module Network.Hawk.Types
        ) where
 
 import           Control.Applicative       ((<|>))
@@ -63,7 +62,7 @@ import           Network.Wai               (Request, rawPathInfo,
                                             remoteHost, requestMethod,
                                             requestHeaderHost, requestHeaders)
 
-import           Network.Hawk.Types
+import           Network.Hawk.Internal.Types
 import           Network.Hawk.Internal
 import           Network.Hawk.Internal.Server
 import           Network.Hawk.Internal.Server.Types
@@ -231,10 +230,16 @@ authenticate opts getCreds req@HawkReq{..} = do
                  in authenticateBase HawkHeader opts getCreds arts hrqPayload sah
     Left err -> return $ Left err
 
--- | Checks message authorization attributes.
-authenticateMessage :: MonadIO m => AuthOpts -> CredentialsFunc m t
-                    -> ByteString -> Maybe Int -> BL.ByteString
-                    -> MessageAuth -> m (AuthResult t)
+-- | Verifies message signature with the given credentials and
+-- authorization attributes.
+authenticateMessage :: MonadIO m
+                    => AuthOpts            -- ^ Options for verification.
+                    -> CredentialsFunc m t -- ^ Credentials lookup function.
+                    -> ByteString          -- ^ Destination host.
+                    -> Maybe Int           -- ^ Destination port.
+                    -> BL.ByteString       -- ^ The message.
+                    -> MessageAuth         -- ^ Signed message object.
+                    -> m (AuthResult t)
 authenticateMessage opts getCreds host port msg auth =
   authenticateBase HawkMessage opts getCreds arts payload sah
   where

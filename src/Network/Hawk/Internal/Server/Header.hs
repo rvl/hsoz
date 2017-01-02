@@ -13,7 +13,7 @@ import           Data.Maybe                (catMaybes)
 import Network.HTTP.Types.Status (Status, ok200, badRequest400, unauthorized401)
 import Network.HTTP.Types.Header (Header, hWWWAuthenticate)
 
-import Network.Hawk.Types
+import Network.Hawk.Internal.Types
 import Network.Hawk.Internal.Server
 import Network.Hawk.Internal.Server.Types
 import Network.Hawk.Internal

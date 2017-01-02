@@ -31,20 +31,20 @@ library
   hs-source-dirs:      src
   exposed-modules:     Network.Iron
                      , Network.Hawk
-                     , Network.Hawk.Internal
-                     , Network.Hawk.Types
+                     , Network.Hawk.Client
+                     , Network.Hawk.Middleware
                      , Network.Hawk.Server
                      , Network.Hawk.Server.Nonce
-                     , Network.Hawk.Internal.JSON
-                     , Network.Hawk.Internal.Server
-                     , Network.Hawk.Internal.Server.Header
-                     , Network.Hawk.Internal.Server.Types
-                     , Network.Hawk.Middleware
-                     , Network.Hawk.Client
+                     , Network.Hawk.Types
+                     , Network.Hawk.URI
+                     , Network.Hawk.Internal
                      , Network.Hawk.Internal.Client
                      , Network.Hawk.Internal.Client.HeaderParser
                      , Network.Hawk.Internal.Client.Types
-                     , Network.Hawk.URI
+                     , Network.Hawk.Internal.Server
+                     , Network.Hawk.Internal.Server.Header
+                     , Network.Hawk.Internal.Server.Types
+                     , Network.Hawk.Internal.Types
                      , Network.Oz
                      , Network.Oz.Application
                      , Network.Oz.Client
@@ -54,6 +54,7 @@ library
   other-modules:       Network.Iron.Util
                      , Network.Hawk.Algo
                      , Network.Hawk.Util
+                     , Network.Hawk.Internal.JSON
                      , Network.Oz.JSON
                      , Network.Oz.Internal.Types
                      , Network.Oz.Boom

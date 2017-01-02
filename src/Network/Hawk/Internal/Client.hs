@@ -45,7 +45,7 @@ import           Control.Monad.Catch       as E (MonadThrow(..), MonadCatch(..),
 import           Control.Monad             (join, void)
 
 import           Network.Hawk.Internal
-import           Network.Hawk.Types
+import           Network.Hawk.Internal.Types
 import           Network.Hawk.Util
 import           Network.Iron.Util
 import           Network.Hawk.Internal.Client.Types
@@ -91,16 +91,27 @@ headerBase' url method creds payload skew ext app dlg ts nonce = let
   arts = header' HawkHeader url method creds payload skew ext app dlg ts nonce
   in Header (clientHawkAuth arts) arts
 
--- | Generates an authorization object for a message.
-message :: Credentials     -- ^ Credentials for encryption
-        -> ByteString      -- ^ Destination host
-        -> Maybe Int       -- ^ Destination port
-        -> BL.ByteString   -- ^ The message
-        -> NominalDiffTime -- ^ Time offset to sync with server time
+-- | Generates an authorization object for a Hawk signed message.
+message :: Credentials     -- ^ Credentials for encryption.
+        -> ByteString      -- ^ Destination host.
+        -> Maybe Int       -- ^ Destination port.
+        -> BL.ByteString   -- ^ The message.
+        -> NominalDiffTime -- ^ Time offset to sync with server time.
         -> IO MessageAuth
 message creds host port msg skew =
   message' creds host port msg skew <$> getPOSIXTime <*> genNonce
 
+-- | Generates an authorization object for a Hawk signed message. This
+-- variation allows the user to provide the message timestamp and
+-- nonce string.
+message' :: Credentials     -- ^ Credentials for encryption.
+         -> ByteString      -- ^ Destination host.
+         -> Maybe Int       -- ^ Destination port.
+         -> BL.ByteString   -- ^ The message.
+         -> NominalDiffTime -- ^ Time offset to sync with server time.
+         -> POSIXTime       -- ^ Message timestamp.
+         -> ByteString      -- ^ Random nonce string.
+         -> MessageAuth
 message' creds host port msg skew ts nonce = artsMsg creds arts
   where
     arts = HeaderArtifacts "" host port "" (ccId creds) ts' nonce "" (Just hash) Nothing Nothing Nothing
@@ -108,6 +119,7 @@ message' creds host port msg skew ts nonce = artsMsg creds arts
     payload = PayloadInfo "" msg
     ts' = ts + skew
 
+-- | Signs a message stored in the given artifacts bundle.
 artsMsg :: Credentials -> HeaderArtifacts -> MessageAuth
 artsMsg creds arts@HeaderArtifacts{..} = MessageAuth haId haTimestamp haNonce hash mac
   where

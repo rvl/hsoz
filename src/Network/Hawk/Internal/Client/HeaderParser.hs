@@ -9,26 +9,10 @@ module Network.Hawk.Internal.Client.HeaderParser
 
 import Data.ByteString (ByteString)
 import Data.Time.Clock.POSIX     (POSIXTime)
-import Network.Hawk.Internal.Client.Types
+import Network.Hawk.Types
 import Control.Monad (join)
 
 import Network.Hawk.Util
-
--- | Represents the @WWW-Authenticate@ header which the server uses to
--- respond when the client isn't authenticated.
-data WwwAuthenticateHeader = WwwAuthenticateHeader
-                             { wahError :: ByteString       -- ^ Error message
-                             , wahTs    :: Maybe POSIXTime  -- ^ Server's timestamp
-                             , wahTsm   :: Maybe ByteString -- ^ Timestamp mac
-                             } deriving Show
-
--- | Represents the @Server-Authorization@ header which the server
--- sends back to the client.
-data ServerAuthorizationHeader = ServerAuthorizationHeader
-                                 { sahMac  :: ByteString
-                                 , sahHash :: Maybe ByteString -- ^ optional payload hash
-                                 , sahExt  :: Maybe ByteString
-                                 } deriving (Show, Eq)
 
 parseWwwAuthenticateHeader :: ByteString -> Either String WwwAuthenticateHeader
 parseWwwAuthenticateHeader = fmap snd . parseHeader wwwKeys wwwAuthHeader

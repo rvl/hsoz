@@ -37,7 +37,8 @@ import           Data.Time.Clock.POSIX
 import           Network.HTTP.Types.Header (HeaderName)
 import           Network.HTTP.Types.Method (Method)
 
-import           Network.Hawk.Types
+import           Network.Hawk.Algo
+import           Network.Hawk.Internal.Types
 
 data HawkType = HawkHeader
               | HawkMessage
