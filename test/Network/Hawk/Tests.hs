@@ -1,9 +1,10 @@
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE RecordWildCards, TupleSections #-}
 
 module Network.Hawk.Tests (tests) where
 
-import Data.Either (isRight)
-import Data.Maybe (isJust)
+import Data.Either (isLeft, isRight)
+import Data.Maybe (isJust, catMaybes)
+import Control.Monad (void)
 import Data.Default
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as S8
@@ -20,7 +21,7 @@ import Data.Time.Clock (NominalDiffTime)
 
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (testCase)
-import Test.HUnit (Assertion, (@?=), (@?))
+import Test.HUnit (Assertion, (@?=), (@?), assertFailure)
 import Test.Tasty.QuickCheck (testProperty)
 import Test.QuickCheck
 import Test.QuickCheck.Monadic
@@ -43,8 +44,6 @@ tests = testGroup "Network.Hawk"
           , test02
           , test03
           , test04
-          --, testCase "generates a header then successfully parse it (no server header options)" boring
-          --, testCase "generates a header then successfully parse it (with hash)" duplicate
           , test05
           , test06
           , test07
@@ -105,8 +104,19 @@ tests = testGroup "Network.Hawk"
             --, testClientHeader07
             --, testClientHeader09
             ]
-          , testGroup "authenticate" []
-          , testGroup "message" []
+          , testGroup "authenticate"
+            [ testClientAuth01
+            , testClientAuth03
+            , testClientAuth04
+            , testClientAuth05
+            , testClientAuth07
+            , testClientAuth08
+            , testClientAuth09
+            , testClientAuth10
+            ]
+          , testGroup "message"
+            [ testClientMessage01
+            ]
           ]
         ]
 
@@ -143,7 +153,7 @@ test01 = testCase "generates a header then successfully parses it" $ do
             , hrqAuthorization = Client.hdrField hdr
             }
   r <- Server.authenticate def credsFunc hrq
-  isRight r @?= True
+  assertSuccess r
   let Right (Server.AuthSuccess creds' arts user) = r
   user @?= "steve"
   Hawk.haExt arts @?= Just "some-app-data"
@@ -172,7 +182,7 @@ test02 = testCase "generates a header then successfully parses it (WAI request)"
       creds2' = clientCreds "" creds2
       arts' = arts { haHash = Just $ calculatePayloadHash (Client.ccAlgorithm creds) payload2 }
   r2 <- Client.authenticate res creds2' arts' (Just (payloadData payload2)) Client.ServerAuthorizationRequired
-  r2 @?= Right ()
+  isRight r2 @?= True
 
 clientCreds :: ClientId -> Server.Credentials -> Client.Credentials
 clientCreds i (Server.Credentials k a) = Client.Credentials i k a
@@ -224,7 +234,7 @@ test03 = testCase "generates a header then successfully parses it (absolute requ
       arts' = arts { haHash = Just $ calculatePayloadHash (Client.ccAlgorithm creds) payload2 }
 
   r2 <- Client.authenticate res creds2' arts' (Just (payloadData payload2)) Client.ServerAuthorizationRequired
-  r2 @?= Right ()
+  isRight r2 @?= True
 
 
 test04 = testCase "generates a header then fails to parse it (missing server header hash)" $ do
@@ -257,10 +267,14 @@ test04 = testCase "generates a header then fails to parse it (missing server hea
   r2 <- Client.authenticate res creds2' arts2 (Just (payloadData payload2)) Client.ServerAuthorizationRequired
   r2 @?= Left "Missing response hash attribute"
 
+-- boring test case
+-- test00 = testCase "generates a header then successfully parse it (no server header options)"
+-- duplicate test case
+-- test00 = testCase "generates a header then successfully parse it (with hash)"
+
 test05 = testCase "generates a header then successfully parse it then validate payload" $ do
   let (creds, credsFunc, user) = makeCreds "123456"
       ext = Just "some-app-data"
-      -- fixme: js impl seems to have a default content-type
       payload = PayloadInfo "text/plain" "hola!"
       payload2 = PayloadInfo "text/html" "hola!"
       payload3 = PayloadInfo "text/plain" "hello!"
@@ -274,7 +288,7 @@ test05 = testCase "generates a header then successfully parse it then validate p
 
   -- authenticate request
   r <- Server.authenticate def credsFunc hrq
-  isRight r @?= True
+  assertSuccess r
   let Right s@(Server.AuthSuccess creds' arts user) = r
   user @?= "steve"
   Hawk.haExt arts @?= Just "some-app-data"
@@ -304,7 +318,7 @@ test06 = testCase "generates a header then successfully parses and validates pay
 
   -- authenticate request
   r <- Server.authenticate def credsFunc hrq
-  isRight r @?= True
+  assertSuccess r
   let Right s@(Server.AuthSuccess creds' arts user) = r
   user @?= "steve"
   Hawk.haExt arts @?= Just "some-app-data"
@@ -330,7 +344,7 @@ test07 = testCase "generates a header then successfully parse it (app)" $ do
 
   -- authenticate request
   r <- Server.authenticate def credsFunc hrq
-  isRight r @?= True
+  assertSuccess r
   let Right s@(Server.AuthSuccess creds' arts user) = r
   user @?= user
   Hawk.haExt arts @?= Just "some-app-data"
@@ -353,8 +367,7 @@ test08 = testCase "generates a header then successfully parse it (app, dlg)" $ d
 
   -- authenticate request
   r <- Server.authenticate def credsFunc hrq
-  isRight r @?= True
-  let Right s@(Server.AuthSuccess creds' arts user) = r
+  s@(Server.AuthSuccess creds' arts user) <- assertSuccess r
   user @?= user
   Hawk.haExt arts @?= Just "some-app-data"
   Hawk.haApp arts @?= Just app
@@ -456,9 +469,9 @@ prop_parseWWWAuthenticate :: (POSIXTime, String) -> Property
 prop_parseWWWAuthenticate (ts, error) = isNice error ==>
                                         either (const $ property False) check wh
   where
-    check Client.WwwAuthenticateHeader{..} = floor wahTs == floor ts .&&.
+    check Client.WwwAuthenticateHeader{..} = fmap floor wahTs == Just (floor ts) .&&.
                                              wahError == (S8.pack error) .&&.
-                                             wahTsm /= ""
+                                             wahTsm /= Just ""
     algo = HawkAlgo SHA256
     key = "key"
     cc = Client.Credentials "1" key algo
@@ -782,43 +795,43 @@ data TestClient = TestClient
 instance Default TestClient where
   def = TestClient testClientUrl2 "POST" testClientCreds2 (Just testPayload2) 0 (Just testClientExt) 1353809207 "Ygvqdz"
 
-testClientHeader TestClient{..} = Client.hdrField $ Client.headerBase' tcUrl tcMethod tcCreds tcPayload tcSkew tcExt Nothing Nothing tcTimestamp tcNonce
+testClientHeader TestClient{..} hdr = Client.hdrField h @?= hdr
+  where h = Client.headerBase' tcUrl tcMethod tcCreds tcPayload
+            tcSkew tcExt Nothing Nothing tcTimestamp tcNonce
 
-testClientHeader01 = testCase "returns a valid authorization header (sha1)" $ do
-  let hdr = testClientHeader (def { tcUrl = testClientUrl1, tcCreds = testClientCreds1, tcPayload = Just testPayload1 })
-  hdr @?= "Hawk id=\"123456\", ts=\"1353809207\", nonce=\"Ygvqdz\", hash=\"bsvY3IfUllw6V5rvk4tStEvpBhE=\", ext=\"Bazinga!\", mac=\"qbf1ZPG/r/e06F4ht+T77LXi5vw=\""
+testClientHeader01 = testCase "returns a valid authorization header (sha1)" $
+  testClientHeader (def { tcUrl = testClientUrl1, tcCreds = testClientCreds1, tcPayload = Just testPayload1 })
+  "Hawk id=\"123456\", ts=\"1353809207\", nonce=\"Ygvqdz\", hash=\"bsvY3IfUllw6V5rvk4tStEvpBhE=\", ext=\"Bazinga!\", mac=\"qbf1ZPG/r/e06F4ht+T77LXi5vw=\""
 
-testClientHeader02 = testCase "returns a valid authorization header (sha256)" $ do
-  let hdr = testClientHeader def
-  hdr @?= "Hawk id=\"123456\", ts=\"1353809207\", nonce=\"Ygvqdz\", hash=\"2QfCt3GuY9HQnHWyWD3wX68ZOKbynqlfYmuO2ZBRqtY=\", ext=\"Bazinga!\", mac=\"q1CwFoSHzPZSkbIvl0oYlD+91rBUEvFk763nMjMndj8=\""
+testClientHeader02 = testCase "returns a valid authorization header (sha256)" $
+  testClientHeader def
+  "Hawk id=\"123456\", ts=\"1353809207\", nonce=\"Ygvqdz\", hash=\"2QfCt3GuY9HQnHWyWD3wX68ZOKbynqlfYmuO2ZBRqtY=\", ext=\"Bazinga!\", mac=\"q1CwFoSHzPZSkbIvl0oYlD+91rBUEvFk763nMjMndj8=\""
 
-testClientHeader03 = testCase "returns a valid authorization header (no ext)" $ do
-  let hdr = testClientHeader (def { tcExt = Nothing })
-  hdr @?= "Hawk id=\"123456\", ts=\"1353809207\", nonce=\"Ygvqdz\", hash=\"2QfCt3GuY9HQnHWyWD3wX68ZOKbynqlfYmuO2ZBRqtY=\", mac=\"HTgtd0jPI6E4izx8e4OHdO36q00xFCU0FolNq3RiCYs=\""
+testClientHeader03 = testCase "returns a valid authorization header (no ext)" $
+  testClientHeader (def { tcExt = Nothing })
+  "Hawk id=\"123456\", ts=\"1353809207\", nonce=\"Ygvqdz\", hash=\"2QfCt3GuY9HQnHWyWD3wX68ZOKbynqlfYmuO2ZBRqtY=\", mac=\"HTgtd0jPI6E4izx8e4OHdO36q00xFCU0FolNq3RiCYs=\""
 
 -- don't need this test because of types
 -- testClientHeader04 = testCase "returns a valid authorization header (null ext)"
 
-testClientHeader05 = testCase "returns a valid authorization header (empty payload)" $ do
-  let hdr = testClientHeader (def { tcPayload = Just testPayload3, tcExt = Nothing })
-  hdr @?= "Hawk id=\"123456\", ts=\"1353809207\", nonce=\"Ygvqdz\", hash=\"q/t+NNAkQZNlq/aAD6PlexImwQTxwgT2MahfTa9XRLA=\", mac=\"U5k16YEzn3UnBHKeBzsDXn067Gu3R4YaY6xOt9PYRZM=\""
+testClientHeader05 = testCase "returns a valid authorization header (empty payload)" $
+  testClientHeader (def { tcPayload = Just testPayload3, tcExt = Nothing })
+  "Hawk id=\"123456\", ts=\"1353809207\", nonce=\"Ygvqdz\", hash=\"q/t+NNAkQZNlq/aAD6PlexImwQTxwgT2MahfTa9XRLA=\", mac=\"U5k16YEzn3UnBHKeBzsDXn067Gu3R4YaY6xOt9PYRZM=\""
 
-testClientHeader06 = testCase "returns a valid authorization header (pre hashed payload)" $ do
+testClientHeader06 = testCase "returns a valid authorization header (pre hashed payload)" $
+  -- fixme: use precalculated hash
   let hash = calculatePayloadHash (HawkAlgo SHA256) testPayload2
-      -- fixme: use precalculated hash
-      hdr = testClientHeader (def { tcPayload = Just testPayload2, tcExt = Nothing })
-  hdr @?= "Hawk id=\"123456\", ts=\"1353809207\", nonce=\"Ygvqdz\", hash=\"2QfCt3GuY9HQnHWyWD3wX68ZOKbynqlfYmuO2ZBRqtY=\", mac=\"HTgtd0jPI6E4izx8e4OHdO36q00xFCU0FolNq3RiCYs=\""
+  in testClientHeader (def { tcPayload = Just testPayload2, tcExt = Nothing })
+     "Hawk id=\"123456\", ts=\"1353809207\", nonce=\"Ygvqdz\", hash=\"2QfCt3GuY9HQnHWyWD3wX68ZOKbynqlfYmuO2ZBRqtY=\", mac=\"HTgtd0jPI6E4izx8e4OHdO36q00xFCU0FolNq3RiCYs=\""
 
-testClientHeader07 = testCase "errors on missing uri" $ do
-  let hdr = testClientHeader (def { tcUrl = "" })
-  hdr @?= ""
+testClientHeader07 = testCase "errors on missing uri" $
+  testClientHeader (def { tcUrl = "" }) ""
 
 -- js impl tests supply a number instead of string url
 -- testClientHeader08 = testCase "errors on invalid uri"
 
-testClientHeader09 = testCase "errors on missing method" $ do
-  let hdr = testClientHeader (def { tcMethod = "" })
-  hdr @?= ""
+testClientHeader09 = testCase "errors on missing method" $
+  testClientHeader (def { tcMethod = "" }) ""
 
 -- js impl tests supply a number instead of string
 --testClientHeader10 = testCase "errors on invalid method"
@@ -830,25 +843,157 @@ testClientHeader09 = testCase "errors on missing method" $ do
 -- testClientHeader14 = testCase "errors on invalid credentials"
 -- testClientHeader15 = testCase "errors on invalid algorithm"
 
-testClientAuth01 = testCase "returns false on invalid header"
-testClientAuth02 = testCase "returns false on invalid header (callback)"
-testClientAuth03 = testCase "returns false on invalid mac"
-testClientAuth04 = testCase "returns true on ignoring hash"
-testClientAuth05 = testCase "validates response payload"
-testClientAuth06 = testCase "validates response payload (callback)"
-testClientAuth07 = testCase "errors on invalid response payload"
-testClientAuth08 = testCase "fails on invalid WWW-Authenticate header format"
-testClientAuth09 = testCase "fails on invalid WWW-Authenticate header format"
-testClientAuth10 = testCase "skips tsm validation when missing ts"
+mockResponse2 :: Maybe ByteString -> BL.ByteString -> Response BL.ByteString
+mockResponse2 auth b = mockResponse (PayloadInfo "text/plain" b) (catMaybes [hdr])
+  where hdr = fmap ("server-authorization",) auth
 
+testClientAuth01 = testCase "returns false on invalid header" $ do
+  let r = mockResponse2 (Just "Hawk mac=\"abc\", bad=\"xyz\"") ""
+  ok <- Client.authenticate r undefined undefined Nothing Client.ServerAuthorizationRequired
+  isLeft ok @?= True
+  -- fixme: better message for parse error
+  -- ok @?= Left "Invalid Server-Authorization header"
+  ok @?= Left "endOfInput"
 
-testClientMessage01 = testCase "generates authorization"
-testClientMessage02 = testCase "errors on invalid host"
-testClientMessage03 = testCase "errors on invalid port"
-testClientMessage04 = testCase "errors on missing host"
-testClientMessage05 = testCase "errors on null message"
-testClientMessage06 = testCase "errors on missing message"
-testClientMessage07 = testCase "errors on invalid message"
-testClientMessage08 = testCase "errors on missing options"
-testClientMessage09 = testCase "errors on invalid credentials (id)"
-testClientMessage10 = testCase "errors on invalid credentials (key)"
+-- same as previous test
+--testClientAuth02 = testCase "returns false on invalid header (callback)"
+
+testClientAuth03 = testCase "returns false on invalid mac" $ do
+  let r = mockResponse2 (Just "Hawk mac=\"_IJRsMl/4oL+nn+vKoeVZPdCHXB4yJkNnBbTbHFZUYE=\", hash=\"f9cDF/TDm7TkYRLnGwRMfeDzT6LixQVLvrIKhh0vgmM=\", ext=\"response-specific\"") ""
+      cid = "123456"
+      (creds, _, _) = makeCreds cid
+      arts = HeaderArtifacts
+             { haMethod = "POST"
+             , haHost = "example.com"
+             , haPort = Just 8080
+             , haResource = hrqUrl testReq4
+             , haTimestamp = 1362336900
+             , haNonce = "eb5S_L"
+             , haHash = Just "nJjkVtBE5Y/Bk38Aiokwn0jiJxt/0S2WRSUwWLCf5xk="
+             , haExt = Just "some-app-data"
+             , haMac = "BlmSe8K+pbKIb6YsZCnt4E1GrYvY1AaYayNR82dGpIk="
+             , haId = cid
+             , haApp = Nothing
+             , haDlg = Nothing
+             }
+  ok <- Client.authenticate r creds arts Nothing Client.ServerAuthorizationRequired
+  ok @?= Left "Bad response mac"
+
+testClientAuth04 = testCase "returns true on ignoring hash" $ do
+  let r = mockResponse2 (Just "Hawk mac=\"XIJRsMl/4oL+nn+vKoeVZPdCHXB4yJkNnBbTbHFZUYE=\", hash=\"f9cDF/TDm7TkYRLnGwRMfeDzT6LixQVLvrIKhh0vgmM=\", ext=\"response-specific\"") ""
+      cid = "123456"
+      (creds, _, _) = makeCreds cid
+      arts = HeaderArtifacts
+             { haMethod = "POST"
+             , haHost = "example.com"
+             , haPort = Just 8080
+             , haResource = hrqUrl testReq4
+             , haTimestamp = 1362336900
+             , haNonce = "eb5S_L"
+             , haHash = Just "nJjkVtBE5Y/Bk38Aiokwn0jiJxt/0S2WRSUwWLCf5xk="
+             , haExt = Just "some-app-data"
+             , haMac = "BlmSe8K+pbKIb6YsZCnt4E1GrYvY1AaYayNR82dGpIk="
+             , haId = cid
+             , haApp = Nothing
+             , haDlg = Nothing
+             }
+  r <- Client.authenticate r creds arts Nothing Client.ServerAuthorizationRequired
+  void $ assertSuccess r
+
+testClientAuth05 = testCase "validates response payload" $ do
+  let r = mockResponse2 (Just "Hawk mac=\"odsVGUq0rCoITaiNagW22REIpqkwP9zt5FyqqOW9Zj8=\", hash=\"f9cDF/TDm7TkYRLnGwRMfeDzT6LixQVLvrIKhh0vgmM=\", ext=\"response-specific\"") p
+      p = "some reply"
+      cid = "123456"
+      (creds, _, _) = makeCreds cid
+      arts = HeaderArtifacts
+             { haMethod = "POST"
+             , haHost = "example.com"
+             , haPort = Just 8080
+             , haResource = hrqUrl testReq4
+             , haTimestamp = 1453070933
+             , haNonce = "3hOHpR"
+             , haHash = Just "nJjkVtBE5Y/Bk38Aiokwn0jiJxt/0S2WRSUwWLCf5xk="
+             , haExt = Just "some-app-data"
+             , haMac = "/DitzeD66F2f7O535SERbX9p+oh9ZnNLqSNHG+c7/vs="
+             , haId = cid
+             , haApp = Nothing
+             , haDlg = Nothing
+             }
+  ok <- Client.authenticate r creds arts (Just p) Client.ServerAuthorizationRequired
+  ok @?= Right (Just (Client.ServerAuthorizationHeader
+                      "odsVGUq0rCoITaiNagW22REIpqkwP9zt5FyqqOW9Zj8="
+                      (Just "f9cDF/TDm7TkYRLnGwRMfeDzT6LixQVLvrIKhh0vgmM=")
+                      (Just "response-specific")))
+
+-- same as previous test
+--testClientAuth06 = testCase "validates response payload (callback)"
+
+testClientAuth07 = testCase "errors on invalid response payload" $ do
+  let r = mockResponse2 (Just "Hawk mac=\"odsVGUq0rCoITaiNagW22REIpqkwP9zt5FyqqOW9Zj8=\", hash=\"f9cDF/TDm7TkYRLnGwRMfeDzT6LixQVLvrIKhh0vgmM=\", ext=\"response-specific\"") p
+      p = "wrong reply"
+      cid = "123456"
+      (creds, _, _) = makeCreds cid
+      arts = HeaderArtifacts
+             { haMethod = "POST"
+             , haHost = "example.com"
+             , haPort = Just 8080
+             , haResource = hrqUrl testReq4
+             , haTimestamp = 1453070933
+             , haNonce = "3hOHpR"
+             , haHash = Just "nJjkVtBE5Y/Bk38Aiokwn0jiJxt/0S2WRSUwWLCf5xk="
+             , haExt = Just "some-app-data"
+             , haMac = "/DitzeD66F2f7O535SERbX9p+oh9ZnNLqSNHG+c7/vs="
+             , haId = cid
+             , haApp = Nothing
+             , haDlg = Nothing
+             }
+  ok <- Client.authenticate r creds arts (Just p) Client.ServerAuthorizationRequired
+  ok @?= Left "Bad response payload mac"
+
+mockResponse3 :: ByteString -> Response BL.ByteString
+mockResponse3 auth = mockResponse (PayloadInfo "text/plain" "") [("www-authenticate", auth)]
+
+testClientAuth08 = testCase "fails on invalid WWW-Authenticate header format 1" $ do
+  let r = mockResponse3 "Hawk ts=\"1362346425875\", tsm=\"PhwayS28vtnn3qbv0mqRBYSXebN/zggEtucfeZ620Zo=\", x=\"Stale timestamp\""
+  ok <- Client.authenticate r undefined undefined Nothing Client.ServerAuthorizationRequired
+  -- fixme: better message for parse error
+  ok @?= Left "endOfInput"
+
+testClientAuth09 = testCase "fails on invalid WWW-Authenticate header format 2" $ do
+  let r = mockResponse3 "Hawk ts=\"1362346425875\", tsm=\"hwayS28vtnn3qbv0mqRBYSXebN/zggEtucfeZ620Zo=\", error=\"Stale timestamp\""
+      (creds, _, _) = makeCreds "123456"
+  ok <- Client.authenticate r creds undefined Nothing Client.ServerAuthorizationRequired
+  ok @?= Left "Invalid server timestamp hash"
+
+testClientAuth10 = testCase "skips tsm validation when missing ts" $ do
+  let r = mockResponse3 "Hawk error=\"Stale timestamp\""
+  ok <- Client.authenticate r undefined undefined Nothing Client.ServerAuthorizationNotRequired
+  ok @?= Right Nothing
+
+testClientMessage01 = testCase "generates authorization" $ do
+  now <- getPOSIXTime
+  let ts = 1353809207
+      skew = ts - now
+      nonce = "abc123"
+  -- fixme: add messageWith function with option to provide timestamp and nonce
+  MessageAuth{..} <- Client.message testClientCreds1 "example.com" (Just 80) "I am the boodyman" skew
+  msgId @?= Client.ccId testClientCreds1
+  msgTimestamp - ts < 0.1 @? "Timestamp mismatch"
+  -- msgNonce @?= nonce
+
+-- tests not needed because of types
+-- testClientMessage02 = testCase "errors on invalid host"
+-- testClientMessage03 = testCase "errors on invalid port"
+-- testClientMessage04 = testCase "errors on missing host"
+-- testClientMessage05 = testCase "errors on null message"
+-- testClientMessage06 = testCase "errors on missing message"
+-- testClientMessage07 = testCase "errors on invalid message"
+-- testClientMessage08 = testCase "errors on missing options"
+-- testClientMessage09 = testCase "errors on invalid credentials (id)"
+-- testClientMessage10 = testCase "errors on invalid credentials (key)"
+
+assertSuccess :: Show e => Either e a -> IO a
+assertSuccess (Left msg) = do
+  assertFailure $ "Expected auth success, got: " ++ show msg
+  return undefined
+assertSuccess (Right a) = return a
