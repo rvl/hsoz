@@ -44,8 +44,10 @@
 *** DONE nonce validation helper
     CLOSED: [2016-12-04 Sun 22:28]
 
-*** TODO client.message.authenticate()
-*** TODO server.authenticateMessage()
+*** DONE client.message.authenticate()
+    CLOSED: [2017-01-02 Mon 04:39]
+*** DONE server.authenticateMessage()
+    CLOSED: [2017-01-02 Mon 04:39]
 *** TODO helper function for client-side nonce validation
     Server responses have the client-generated nonce included, so are
     usually save from response replays. But if the client response
@@ -91,7 +93,8 @@
 *** Hawk
 **** DONE done: Sunny day unit tests
      CLOSED: [2016-11-30 Wed 10:58]
-**** TODO Implement full suite coming from js impl
+**** DONE Implement full suite coming from js impl
+     CLOSED: [2017-01-02 Mon 04:39]
 **** TODO interop tests
 ***** TODO nix builds of hawk implementations
       e.g. javascript, python, go

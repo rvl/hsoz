@@ -48,8 +48,8 @@ repository.
 This is an in-progress experiment in implementing the protocol in
 Haskell.
 
- * **Iron**: complete and tested.
- * **Hawk**: complete, test suite under development.
+ * **Iron**: complete
+ * **Hawk**: complete
  * **Oz**: under construction.
  * **Example web application**: under construction.
 
