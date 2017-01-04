@@ -16,7 +16,7 @@ homepage:            https://github.com/rvl/hsoz
 license:             BSD3
 license-file:        LICENSE
 author:              Rodney Lorrimar
-maintainer:          dev@rodney.id.au
+maintainer:          Rodney Lorrimar <dev@rodney.id.au>
 copyright:           2016 Rodney Lorrimar
 category:            Web, Authentication
 build-type:          Simple
@@ -26,6 +26,10 @@ cabal-version:       >=1.10
 stability:           experimental
 bug-reports:         https://github.com/rvl/hsoz/issues
 Tested-With:         GHC == 8.0.1
+
+flag example
+  description: Build the example applications
+  default: True
 
 library
   hs-source-dirs:      src
@@ -94,6 +98,11 @@ library
   default-extensions:  OverloadedStrings
 
 executable hsoz-example
+  if flag(example)
+    buildable: True
+  else
+    buildable: False
+
   hs-source-dirs:      example
   main-is:             Main.hs
   other-modules:       Common
@@ -125,9 +134,28 @@ executable hsoz-example
                      , warp
   default-language:    Haskell2010
   default-extensions:  OverloadedStrings
-  if impl(ghcjs)
-    -- this is just because of wreq pulling in unbuildable deps
-    buildable:         False
+
+executable iron
+  if flag(example)
+    buildable: True
+  else
+    buildable: False
+
+  hs-source-dirs:      example
+  main-is:             Iron.hs
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  build-depends:       hsoz
+                     , aeson
+                     , base
+                     , bytestring
+                     , containers
+                     , cryptonite
+                     , data-default
+                     , optparse-applicative
+                     , text
+                     , time
+  default-language:    Haskell2010
+  default-extensions:  OverloadedStrings
 
 test-suite hsoz-test
   type:                exitcode-stdio-1.0

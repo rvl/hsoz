@@ -64,6 +64,7 @@ module Network.Iron
   , SHA256(SHA256)
   , IronSalt(..)
   , urlSafeBase64
+  , def
   ) where
 
 import           Control.Monad          (liftM, when)
@@ -115,7 +116,7 @@ data Options = Options
   } deriving Show
 
 -- | Encryption algorithms supported by Iron.
-data IronCipher = AES128CTR | AES256CBC  deriving Show
+data IronCipher = AES128CTR | AES256CBC  deriving (Show, Read, Eq, Enum)
 
 class IsIronCipher a where
   ivSize :: a -> Int

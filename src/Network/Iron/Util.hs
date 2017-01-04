@@ -77,6 +77,10 @@ justRight _ (Just a) = Right a
 justRight e Nothing = Left e
 
 -- | Modifies the left branch of an 'Either'.
-mapLeft :: (e -> e') -> Either e a -> Either e' a
-mapLeft f (Left e) = Left (f e)
-mapLeft _ (Right a) = Right a
+mapLeft :: (a -> a') -> Either a b -> Either a' b
+mapLeft f (Left a) = Left (f a)
+mapLeft _ (Right b) = Right b
+
+-- | Modifies both branches of an 'Either'.
+mapEither :: (a -> a') -> (b -> b') -> Either a b -> Either a' b'
+mapEither f g = mapLeft f . fmap g
