@@ -1,5 +1,5 @@
 name:                hsoz
-version:             0.0.0.4
+version:             0.0.1.0
 synopsis:            Iron, Hawk, Oz: Web auth protocols
 description:
   hsoz is a Haskell implementation of the Iron, Hawk, and Oz web

@@ -1,6 +1,6 @@
 # Oz Haskell Implementation
 
-[![Build Status](https://travis-ci.org/rvl/hsoz.svg?branch=master)](https://travis-ci.org/rvl/hsoz) [![Hackage](https://img.shields.io/hackage/v/hsoz.svg)]()
+[![Build Status](https://travis-ci.org/rvl/hsoz.svg?branch=master)](https://travis-ci.org/rvl/hsoz) [![Hackage](https://img.shields.io/hackage/v/hsoz.svg)](http://hackage.haskell.org/package/hsoz)
 
 *hsoz* is a Haskell implementation of the Iron, Hawk, and Oz web
 authentication protocols. These protocols originate from the OAuth2
