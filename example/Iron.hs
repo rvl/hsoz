@@ -1,6 +1,7 @@
 import Options.Applicative
+import Data.Monoid ((<>))
 import Control.Monad (join, unless)
-import           Data.Time.Clock        (NominalDiffTime)
+import Data.Time.Clock (NominalDiffTime)
 import Text.Read (readEither)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy.Char8 as L8
