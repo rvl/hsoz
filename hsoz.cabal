@@ -77,7 +77,7 @@ library
                      , errors
                      , exceptions
                      , hashable
-                     , http-client >= 0.4 && < 0.5
+                     , http-client >= 0.5 && < 0.6
                      , http-types
                      , lens
                      , memory
@@ -121,8 +121,8 @@ executable hsoz-example
                      , containers
                      , cryptonite
                      , data-default
-                     , http-client >= 0.4 && < 0.5
-                     , http-conduit >= 2.1 && < 2.2
+                     , http-client >= 0.5 && < 0.6
+                     , http-conduit >= 2.2 && < 2.3
                      , http-types
                      , lens
                      , lucid

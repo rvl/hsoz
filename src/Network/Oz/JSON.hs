@@ -18,7 +18,7 @@ import           Network.Oz.Internal.Types
 import           Network.Oz.Types
 
 fieldModifier :: String -> String
-fieldModifier = drop 1 . dropWhile (/= '_') . dropWhile (== '_') . camelTo '_'
+fieldModifier = drop 1 . dropWhile (/= '_') . dropWhile (== '_') . camelTo2 '_'
 
 opts = defaultOptions { JSON.fieldLabelModifier = fieldModifier }
 

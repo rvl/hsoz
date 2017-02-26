@@ -32,9 +32,9 @@ import           Network.HTTP.Types.Header (HeaderName, hContentType, hWWWAuthen
 import           Network.HTTP.Types.Method (Method)
 import           Network.HTTP.Types.Status (Status, statusCode)
 import           Network.HTTP.Types.URI    (extractPath)
-import           Network.HTTP.Client       (Response, responseHeaders)
+import           Network.HTTP.Client       (Response, responseHeaders, responseStatus)
 import           Network.HTTP.Client       (Request, requestHeaders, requestBody, getUri, method, secure)
-import           Network.HTTP.Client       (HttpException(..))
+import           Network.HTTP.Client       (HttpException(..), HttpExceptionContent(..))
 import           URI.ByteString            (authorityHost, authorityPort,
                                             hostBS, laxURIParserOptions,
                                             parseURI, portNumber, uriAuthority,
@@ -380,8 +380,8 @@ makeExpiryHandler :: MonadCatch m => Credentials -> Request
                   -> m a -> m (Either NominalDiffTime a)
 makeExpiryHandler creds req = E.handle handler . fmap Right
   where
-    handler e@(StatusCodeException s h _) =
-      case wasStale req creds h s of
+    handler e@(HttpExceptionRequest req (StatusCodeException res _)) =
+      case wasStale req res creds of
         Just ts -> return $ Left ts
         Nothing -> throwM e
 
@@ -411,10 +411,12 @@ authResponse creds arts ck resp = do
       liftIO $ authenticate resp creds arts body ck
     ServerAuthorizationNotRequired -> return (Right Nothing)
 
-wasStale :: Request -> Credentials -> ResponseHeaders -> Status -> Maybe NominalDiffTime
-wasStale req creds hdrs s
-  | secure req && statusCode s == 401 = hawkTs creds hdrs
-  | otherwise                         = Nothing
+wasStale :: Request -> Response () -> Credentials -> Maybe NominalDiffTime
+wasStale req res creds | secure req && unauthorized = serverTs
+                       | otherwise                  = Nothing
+  where
+    unauthorized = statusCode (responseStatus res) == 401
+    serverTs = hawkTs creds (responseHeaders res)
 
 -- | Gets the WWW-Authenticate header value and returns the server
 -- timestamp, if the response contains an authenticated timestamp.
