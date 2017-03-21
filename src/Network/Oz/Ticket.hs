@@ -17,6 +17,7 @@ import           Control.Monad          (liftM, void, when)
 import           Control.Monad.IO.Class (MonadIO (..), liftIO)
 import           Control.Applicative    ((<|>))
 import           Data.Monoid            ((<>))
+import           Data.Bifunctor         (first)
 import           Crypto.Random
 import           Data.Aeson             (Object (..), Value (..), object,
                                          toJSON)
@@ -131,11 +132,11 @@ checkPassword (Key p) | BS.null p = Left "Invalid encryption password"
 
 -- | Validate a grant scope in comparison to an app scope.
 checkGrantScope :: Maybe OzScope -> Maybe OzScope -> Either String (Maybe OzScope)
-checkGrantScope app grant = mapLeft (const msg) (checkScopes app grant)
+checkGrantScope app grant = first (const msg) (checkScopes app grant)
   where msg = "Grant scope is not a subset of the application scope"
 
 checkParentScope :: Maybe OzScope -> Maybe OzScope -> Either String (Maybe OzScope)
-checkParentScope parent scope = mapLeft (const msg) (checkScopes parent scope)
+checkParentScope parent scope = first (const msg) (checkScopes parent scope)
   where msg = "New scope is not a subset of the parent ticket scope"
 
 checkScopes :: Maybe OzScope -> Maybe OzScope -> Either String (Maybe OzScope)
@@ -150,10 +151,6 @@ checkScope :: OzScope -> Either String OzScope
 checkScope scope | any T.null scope = Left "scope includes empty string value"
                  | length (nub scope) /= length scope = Left "scope includes duplicated item"
                  | otherwise = Right scope
-
-mapLeft :: (a -> c) -> Either a b -> Either c b
-mapLeft f (Left a) = Left (f a)
-mapLeft _ (Right b) = Right b
 
 randomKey :: TicketOpts -> IO ByteString
 randomKey TicketOpts{..} = do

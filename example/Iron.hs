@@ -1,5 +1,6 @@
 import Options.Applicative
 import Data.Monoid ((<>))
+import Data.Bifunctor (bimap)
 import Control.Monad (join, unless)
 import Data.Time.Clock (NominalDiffTime)
 import Text.Read (readEither)
@@ -116,23 +117,13 @@ unconv StringFormat _          = Left "Value is not a plain JSON string"
 
 conv :: Format -> L8.ByteString -> Either String Value
 conv JSONFormat   = eitherDecode'
-conv StringFormat = mapEither show (String . TL.toStrict) . decodeUtf8'
+conv StringFormat = bimap show (String . TL.toStrict) . decodeUtf8'
 
 doSeal :: ToJSON a => Options -> Password -> a -> IO (Either String ByteString)
 doSeal o p a = justRight "Failed to seal" <$> sealWith o p a
 
 doUnseal :: FromJSON a => Options -> Password -> L8.ByteString -> IO (Either String a)
 doUnseal o p s = unsealWith o (const (Just p)) (L8.toStrict s)
-
-
--- | Modifies the left branch of an 'Either'.
-mapLeft :: (a -> a') -> Either a b -> Either a' b
-mapLeft f (Left a) = Left (f a)
-mapLeft _ (Right b) = Right b
-
--- | Modifies both branches of an 'Either'.
-mapEither :: (a -> a') -> (b -> b') -> Either a b -> Either a' b'
-mapEither f g = mapLeft f . fmap g
 
 -- | Converts 'Maybe' to 'Either'.
 justRight :: e -> Maybe a -> Either e a

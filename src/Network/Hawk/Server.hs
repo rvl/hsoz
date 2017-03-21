@@ -51,6 +51,7 @@ import           Data.Text                 (Text)
 import qualified Data.Text                 as T
 import           Data.Text.Encoding        (decodeUtf8, decodeUtf8')
 import           Control.Error.Safe        (rightMay)
+import           Data.Bifunctor            (first)
 import           Data.Default              (Default(..))
 import           Data.Time.Clock           (NominalDiffTime)
 import           Data.Time.Clock.POSIX
@@ -68,7 +69,7 @@ import           Network.Hawk.Internal.Server
 import           Network.Hawk.Internal.Server.Types
 import           Network.Hawk.Internal.Server.Header
 import           Network.Hawk.Util
-import           Network.Iron.Util         (b64urldec, justRight, mapLeft)
+import           Network.Iron.Util         (b64urldec, justRight)
 
 -- | Bundle of parameters for 'authenticateRequest'. Provides
 -- information about what the public URL of the server would be. If
@@ -146,7 +147,7 @@ authenticateBewit opts getCreds hrq@HawkReq{..} = do
   now <- getServerTime opts
   case checkBewit hrq now of
     Right bewit -> do
-      mcreds <- mapLeft unauthorized <$> getCreds (bewitId bewit)
+      mcreds <- first unauthorized <$> getCreds (bewitId bewit)
       return $ case mcreds of
         Right creds -> authenticateBewit' creds hrq bewit
         Left e -> undefined
@@ -159,7 +160,7 @@ authenticateBewit opts getCreds hrq@HawkReq{..} = do
       checkLength hrqUrl
       encBewit <- checkEmpty hrqBewit
       checkHeader hrqAuthorization
-      bewit <- mapLeft unauthorized $ decodeBewit encBewit
+      bewit <- first unauthorized $ decodeBewit encBewit
       checkAttrs bewit
       checkExpiry bewit now
       return bewit
@@ -399,7 +400,7 @@ decodeBewit s = decode s >>= fourParts >>= bewit
     bewit' (id, exp, mac, ext) = Bewit <$> decodeId id
                                  <*> readTsMaybe exp
                                  <*> pure mac <*> pure ext
-    fixMsg = mapLeft (const "Invalid bewit encoding")
+    fixMsg = first (const "Invalid bewit encoding")
     decodeId = rightMay . decodeUtf8'
 
 ----------------------------------------------------------------------------
