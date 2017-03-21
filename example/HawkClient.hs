@@ -11,7 +11,8 @@ import           Data.Either               (isRight)
 import qualified Data.Map                  as M
 import qualified Data.Text                 as T
 import           Data.Text.Encoding        (decodeUtf8, encodeUtf8)
-import           Network.HTTP.Client       (HttpException (..))
+import           Network.HTTP.Client       (HttpException(..), HttpExceptionContent(..))
+import           Network.HTTP.Client       (responseStatus, responseHeaders)
 import           Network.HTTP.Types.Header (ResponseHeaders, hAuthorization, hWWWAuthenticate)
 import           Network.HTTP.Types.Status (Status(..))
 import           Network.HTTP.Simple
@@ -47,12 +48,18 @@ clientMain = (withHawk httpLBS uri >>= printResponse True) `E.catches` handlers
   where
     withHawk = Hawk.withHawk creds ext (Just payload) Hawk.ServerAuthorizationRequired
     handlers = [E.Handler handleHTTP, E.Handler handleHawk]
-    handleHTTP e@(StatusCodeException s hdrs _)
-      | statusCode s == 401 = S8.putStrLn $ errMessage s hdrs
-      | otherwise           = throwIO e
+    handleHTTP e@(HttpExceptionRequest _ (StatusCodeException res _))
+      | unauthorized res = S8.putStrLn $ errMessage res
+      | otherwise        = throwIO e
+      where code = statusCode (responseStatus res)
     handleHawk (Hawk.HawkServerAuthorizationException e)
       = putStrLn $ "Invalid server response: " ++ e
 
-errMessage :: Status -> ResponseHeaders -> ByteString
-errMessage s hdrs = statusMessage s <> maybe "" (": " <>) authHdr
-  where authHdr = lookup hWWWAuthenticate hdrs
+unauthorized :: Response a -> Bool
+unauthorized = (== 401) . statusCode . responseStatus
+
+errMessage :: Response a -> ByteString
+errMessage res = statusMessage s <> maybe "" (": " <>) authHdr
+  where
+    authHdr = lookup hWWWAuthenticate $ responseHeaders res
+    s = responseStatus res

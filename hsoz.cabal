@@ -25,7 +25,11 @@ extra-source-files:  README.md
 cabal-version:       >=1.10
 stability:           experimental
 bug-reports:         https://github.com/rvl/hsoz/issues
-Tested-With:         GHC == 8.0.1
+Tested-With:         GHC == 8.0.2
+
+source-repository head
+  type:     git
+  location: https://github.com/rvl/hsoz
 
 flag example
   description: Build the example applications
@@ -34,6 +38,7 @@ flag example
 library
   hs-source-dirs:      src
   exposed-modules:     Network.Iron
+                     , Network.Iron.Util
                      , Network.Hawk
                      , Network.Hawk.Client
                      , Network.Hawk.Middleware
@@ -55,45 +60,44 @@ library
                      , Network.Oz.Server
                      , Network.Oz.Ticket
                      , Network.Oz.Types
-  other-modules:       Network.Iron.Util
-                     , Network.Hawk.Algo
+  other-modules:       Network.Hawk.Algo
                      , Network.Hawk.Util
                      , Network.Hawk.Internal.JSON
                      , Network.Oz.JSON
                      , Network.Oz.Internal.Types
                      , Network.Oz.Boom
   build-depends:       base >= 4.7 && < 5
-                     , aeson
-                     , attoparsec
-                     , base16-bytestring
-                     , base64-bytestring
-                     , byteable
-                     , bytestring
-                     , case-insensitive
-                     , containers
-                     , cryptonite
-                     , data-default
-                     , either
-                     , errors
-                     , exceptions
-                     , hashable
-                     , http-client >= 0.5 && < 0.6
-                     , http-types
-                     , lens
-                     , memory
-                     , mtl
-                     , network
-                     , scientific
-                     , scotty
-                     , securemem
-                     , text
-                     , time
-                     , transformers
-                     , unordered-containers
-                     , uri-bytestring
-                     , vault
-                     , wai
-                     , warp
+                     , aeson                >= 1.0.2  && < 1.1
+                     , attoparsec           >= 0.13.1 && < 0.14
+                     , base16-bytestring    >= 0.1.1  && < 0.2
+                     , base64-bytestring    >= 1.0.0  && < 1.1
+                     , byteable             >= 0.1.1  && < 0.2
+                     , bytestring           >= 0.10.8 && < 0.11
+                     , case-insensitive     >= 1.2.0  && < 1.3
+                     , containers           >= 0.5.7  && < 0.6
+                     , cryptonite           >= 0.21   && < 0.22
+                     , data-default         >= 0.7.1  && < 0.8
+                     , either               >= 4.4.1  && < 4.5
+                     , errors               >= 2.1.3  && < 2.2
+                     , exceptions           >= 0.8.3  && < 0.9
+                     , hashable             >= 1.2.5  && < 1.3
+                     , http-client          >= 0.5.5  && < 0.6
+                     , http-types           >= 0.9.1  && < 0.10
+                     , lens                 >= 4.15.1 && < 4.16
+                     , memory               >= 0.14.1 && < 0.15
+                     , mtl                  >= 2.2.1  && < 2.3
+                     , network              >= 2.6.3  && < 2.7
+                     , scientific           >= 0.3.4  && < 0.4
+                     , scotty               >= 0.11.0 && < 0.12
+                     , securemem            >= 0.1.9  && < 0.2
+                     , text                 >= 1.2.2  && < 1.3
+                     , time                 >= 1.6.0  && < 1.7
+                     , transformers         >= 0.5.2  && < 0.6
+                     , unordered-containers >= 0.2.7  && < 0.3
+                     , uri-bytestring       >= 0.2.2  && < 0.3
+                     , vault                >= 0.3.0  && < 0.4
+                     , wai                  >= 3.2.1  && < 3.3
+                     , warp                 >= 3.2.11 && < 3.3
   default-language:    Haskell2010
   default-extensions:  OverloadedStrings
 
@@ -183,7 +187,3 @@ test-suite hsoz-test
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   default-language:    Haskell2010
   default-extensions:  OverloadedStrings
-
-source-repository head
-  type:     git
-  location: https://github.com/rvl/hsoz
