@@ -23,7 +23,7 @@ import           Data.Aeson             (Object (..), Value (..), object,
                                          toJSON)
 import           Data.ByteString        (ByteString)
 import qualified Data.ByteString        as BS
-import qualified Data.ByteString.Base64 as B64
+import qualified Data.ByteArray.Encoding as B (Base (..), convertToBase, convertFromBase)
 import           Data.List              (isInfixOf, nub)
 import           Data.Maybe             (catMaybes, fromMaybe, isJust)
 import           Data.Text              (Text)
@@ -159,7 +159,7 @@ randomKey TicketOpts{..} = do
   return (fst $ withRandomBytes drg ticketOptsKeyBytes base64)
 
 base64 :: ByteString -> ByteString
-base64 = Iron.urlSafeBase64 . B64.encode
+base64 = B.convertToBase B.Base64URLUnpadded
 
 -- | Adds the cryptographic properties to a ticket and prepares it for
 -- sending.

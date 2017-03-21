@@ -265,12 +265,12 @@ testUnseal04 = unsealFail ticket04 "Bad hmac value"
 
 -- returns an error when decryption fails
 testUnseal05 :: Assertion
-testUnseal05 = unsealFail ticket "base64: input: invalid encoding at offset: 64"
+testUnseal05 = unsealFail ticket "base64URL unpadded: input: invalid encoding at offset: 64"
   where ticket = "Fe26.2**a6dc6339e5ea5dfe7a135631cf3b7dcf47ea38246369d45767c928ea81781694*D3DLEoi-Hn3c972TPpZXqw*mCBhmhHhRKk9KtBjwu3h-1lx1MHKkgloQPKRkQZxpnDwYnFkb3RqdVTQRcuhGf4M??**ff2bf988aa0edf2b34c02d220a45c4a3c572dac6b995771ed20de58da919bfa5*n04AwdA-1wOnGusZJVjoZC9sbAPfBRCnd4iVyX2yM2Y"
 
 -- returns an error when iv base64 decoding fails
 testUnseal06 :: Assertion
-testUnseal06 = unsealFail ticket "base64: input: invalid encoding at offset: 22"
+testUnseal06 = unsealFail ticket "base64URL unpadded: input: invalid encoding at offset: 22"
   where ticket = "Fe26.2**a6dc6339e5ea5dfe7a135631cf3b7dcf47ea38246369d45767c928ea81781694*D3DLEoi-Hn3c972TPpZXqw??*mCBhmhHhRKk9KtBjwu3h-1lx1MHKkgloQPKRkQZxpnDwYnFkb3RqdVTQRcuhGf4M**ff2bf988aa0edf2b34c02d220a45c4a3c572dac6b995771ed20de58da919bfa5*iF6pSFeSD8iYRlYIfD6VRwADFjFR3fX6hM_kIjN3_ew"
 
 -- returns an error when decrypted object is invalid

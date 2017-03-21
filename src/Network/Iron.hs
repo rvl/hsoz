@@ -63,7 +63,6 @@ module Network.Iron
   , IronMAC(..)
   , SHA256(SHA256)
   , IronSalt(..)
-  , urlSafeBase64
   , def
   ) where
 
@@ -87,6 +86,7 @@ import qualified Data.ByteString.Char8  as S8
 import qualified Data.ByteString.Lazy   as BL
 import           Data.SecureMem         (SecureMem(..), ToSecureMem(..))
 import           Data.Byteable          (Byteable(..), constEqBytes)
+import qualified Data.ByteArray         as BA
 import qualified Data.Map               as M
 import           Data.Maybe             (fromJust)
 import           Data.Monoid            ((<>))
@@ -375,12 +375,12 @@ expTime Options{ironTTL} now | ironTTL > 0 = Just ((now + ironTTL) * 1000)
 
 instance IsIronMAC SHA256 where
   macKeySize _ = 32
-  ironMac _ key text = b64 $ hmacGetDigest (hmac key text :: HMAC SHA256)
+  ironMac _ key text = b64url $ hmacGetDigest (hmac key text :: HMAC SHA256)
 
 -- | Calculates the MAC of a message. The result is encoded in the
 -- URL-friendly variant of Base64.
 macWithKey :: IronMAC -> ByteString -> ByteString -> ByteString
-macWithKey algo key text = urlSafeBase64 (ironMac algo key text)
+macWithKey algo key text = ironMac algo key text
 
 generateKey :: Int -> Int -> ByteString -> KeyPass -> Either String ByteString
 generateKey _ s _ (Key k) | byteableLength k >= s = Right (toBytes k)
