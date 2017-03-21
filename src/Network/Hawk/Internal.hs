@@ -28,7 +28,7 @@ import           Data.ByteString.Builder   (byteString, charUtf8,
 import qualified Data.ByteString.Char8     as S8
 import qualified Data.ByteString.Lazy      as BL
 import           Data.Text.Encoding        (encodeUtf8)
-import           Data.Byteable             (constEqBytes)
+import           Data.ByteArray            (constEq)
 import           Data.Char                 (toLower, toUpper)
 import           Data.List                 (intercalate)
 import           Data.Monoid               ((<>))
@@ -66,7 +66,7 @@ escapeHeaderAttribute = id
 checkPayload :: HawkAlgoCls a => Maybe ByteString -> a -> ContentType -> BL.ByteString -> Either String ()
 checkPayload (Just hash) algo ct payload = if good then Right () else Left "Bad payload hash"
   where
-    good = hash `constEqBytes` (calculatePayloadHash algo payloadInfo)
+    good = hash `constEq` (calculatePayloadHash algo payloadInfo)
     payloadInfo = PayloadInfo ct payload
 checkPayload Nothing algo ct payload = Left "Missing required payload hash"
 

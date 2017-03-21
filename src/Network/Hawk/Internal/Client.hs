@@ -18,7 +18,7 @@ import           Data.ByteString           (ByteString)
 import qualified Data.ByteString           as BS
 import qualified Data.ByteString.Char8     as S8
 import qualified Data.ByteString.Lazy      as BL
-import           Data.Byteable             (constEqBytes)
+import           Data.ByteArray            (constEq)
 import           Data.CaseInsensitive      (CI (..))
 import qualified Data.Map                  as M
 import           Data.Maybe                (catMaybes, fromMaybe)
@@ -253,7 +253,7 @@ checkWwwAuthenticateHeader creds w = parseWwwAuthenticateHeader w >>= check
       where tsm = calculateTsMac (ccAlgorithm creds) <$> wahTs h
 
     tsmEq :: Maybe ByteString -> Maybe ByteString -> Bool
-    tsmEq (Just a) (Just b) = a `constEqBytes` b
+    tsmEq (Just a) (Just b) = a `constEq` b
     tsmEq (Just _) Nothing  = False
     tsmEq _        _        = True
 
@@ -265,7 +265,7 @@ checkServerAuthorizationHeader _ _ ServerAuthorizationNotRequired _ Nothing = Ri
 checkServerAuthorizationHeader _ _ ServerAuthorizationRequired _ Nothing = Left "Missing Server-Authorization header"
 checkServerAuthorizationHeader creds arts _ now (Just sa) =
   parseServerAuthorizationHeader sa >>= check
-  where check sah | sahMac sah `constEqBytes` mac = Right (Just sah)
+  where check sah | sahMac sah `constEq` mac = Right (Just sah)
                   | otherwise = Left "Bad response mac"
           where
             arts' = responseArtifacts sah arts

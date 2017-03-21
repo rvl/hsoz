@@ -43,7 +43,7 @@ import           Data.ByteString           (ByteString)
 import qualified Data.ByteString           as BS
 import qualified Data.ByteString.Char8     as S8
 import qualified Data.ByteString.Lazy      as BL
-import           Data.Byteable             (constEqBytes)
+import           Data.ByteArray            (constEq)
 import           Data.CaseInsensitive      (CI (..))
 import           Data.Maybe                (fromMaybe)
 import           Data.Monoid               ((<>))
@@ -120,7 +120,7 @@ authenticateRequest opts creds req body = do
     else authenticate (saOpts opts) creds hreq
 
 authenticateBewit' (creds, t) req bewit
-  | mac `constEqBytes` (bewitMac bewit) = Right (AuthSuccess creds arts t)
+  | mac `constEq` (bewitMac bewit) = Right (AuthSuccess creds arts t)
   | otherwise = Left (AuthFailUnauthorized "Bad mac" (Just creds) (Just arts))
   where
     arts = bewitArtifacts req bewit
@@ -295,7 +295,7 @@ authenticate' ty now opts (creds, t) nonce arts payload sah@AuthorizationHeader{
   let doCheck = authResult creds arts t
       doCheckExp = authResultExp now creds arts t
       mac = serverMac creds ty arts
-  if mac `constEqBytes` sahMac then do
+  if mac `constEq` sahMac then do
     doCheck $ checkPayloadHash (scAlgorithm creds) sahHash payload
     doCheck $ checkNonce nonce
     doCheckExp $ checkExpiration now (saTimestampSkew opts) sahTs

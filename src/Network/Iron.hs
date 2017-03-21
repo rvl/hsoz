@@ -83,9 +83,8 @@ import           Data.ByteString        (ByteString)
 import qualified Data.ByteString        as BS
 import qualified Data.ByteString.Char8  as S8
 import qualified Data.ByteString.Lazy   as BL
-import           Data.SecureMem         (SecureMem(..), ToSecureMem(..))
-import           Data.Byteable          (Byteable(..), constEqBytes)
 import qualified Data.ByteArray         as BA
+import           Data.ByteArray         (ScrubbedBytes, ByteArrayAccess)
 import qualified Data.Map               as M
 import           Data.Maybe             (fromJust)
 import           Data.Monoid            ((<>))
@@ -209,25 +208,25 @@ data Password = MkPassword
 
 -- | Represents a key used for the cipher or message authentication
 -- code, or a password from which a key will be generated.
-data KeyPass = Key SecureMem      -- ^ Pre-generated key
-             | Password SecureMem -- ^ Key derived from password
+data KeyPass = Key ScrubbedBytes      -- ^ Pre-generated key
+             | Password ScrubbedBytes -- ^ Key derived from password
              deriving (Show, Eq)
-             -- note: SecureMem Show doesn't actually show any content
+             -- note: ScrubbedBytes Show doesn't actually show any content
 
 -- | Constructs a 'Password'.
-password :: ToSecureMem a => a -> Password
+password :: ByteArrayAccess a => a -> Password
 password p = passwords p p
 
 -- | Constructs a 'Password', with different encryption and integrity
 -- verification passwords.
-passwords :: ToSecureMem a => a -> a -> Password
+passwords :: ByteArrayAccess a => a -> a -> Password
 passwords e i = password' mempty e i
 
 -- | Constructs a 'Password'. The given identifier will be included as
 -- the second component of the the sealed @Fe26@ string. The
 -- identifier must only include alphanumeric characters and the
 -- underscore, otherwise nothing will be returned.
-passwordWithId :: ToSecureMem a => PasswordId -> a -> Maybe Password
+passwordWithId :: ByteArrayAccess a => PasswordId -> a -> Maybe Password
 passwordWithId k p = passwordsWithId k p p
 
 -- | Constructs a 'Password', with different encryption and integrity
@@ -235,7 +234,7 @@ passwordWithId k p = passwordsWithId k p p
 -- the second component of the the sealed @Fe26@ string. The
 -- identifier must only include alphanumeric characters and the
 -- underscore, otherwise nothing will be returned.
-passwordsWithId :: ToSecureMem a => PasswordId -> a -> a -> Maybe Password
+passwordsWithId :: ByteArrayAccess a => PasswordId -> a -> a -> Maybe Password
 passwordsWithId k e i | validId k = Just $ password' k e i
                       | otherwise = Nothing
 
@@ -243,12 +242,12 @@ validId :: PasswordId -> Bool
 validId k = not (S8.null k) && S8.all inRange k
   where inRange c = isAscii c && isAlphaNum c || c == '_'
 
-passwordValid :: Byteable a => EncryptionOpts -> a -> Bool
-passwordValid EncryptionOpts{..} sec = keySize ieAlgorithm <= byteableLength sec
+passwordValid :: ByteArrayAccess a => EncryptionOpts -> a -> Bool
+passwordValid EncryptionOpts{..} sec = keySize ieAlgorithm <= BA.length sec
 
-password' :: ToSecureMem a => PasswordId -> a -> a -> Password
+password' :: ByteArrayAccess a => PasswordId -> a -> a -> Password
 password' k e i = MkPassword k (passwd e) (passwd i)
-  where passwd = Password . toSecureMem
+  where passwd = Password . BA.convert
 
 -- | User-supplied function to get the password corresponding to the
 -- identifier from the sealed message.
@@ -256,7 +255,7 @@ type LookupPassword = PasswordId -> Maybe Password
 
 -- | The simple case of LookupPassword, where there is the same
 -- password for encryption and verification of all messages.
-onePassword :: ToSecureMem a => a -> LookupPassword
+onePassword :: ByteArrayAccess a => a -> LookupPassword
 onePassword = const . Just . password
 
 -- | Encodes and encrypts a 'Data.Aeson.Value' using the given
@@ -382,13 +381,13 @@ macWithKey :: IronMAC -> ByteString -> ByteString -> ByteString
 macWithKey algo key text = ironMac algo key text
 
 generateKey :: Int -> Int -> ByteString -> KeyPass -> Either String ByteString
-generateKey _ s _ (Key k) | byteableLength k >= s = Right (toBytes k)
+generateKey _ s _ (Key k) | BA.length k >= s = Right (BA.convert k)
                           | otherwise = Left "Key buffer (password) too small"
 generateKey n s l (Password p) | BS.null l = Left "Missing salt"
                                | otherwise = Right (generateKey' n s l p)
 
-generateKey' :: Byteable p => Int -> Int -> ByteString -> p -> ByteString
-generateKey' iterations size salt p = PBKDF2.generate prf params (toBytes p) salt
+generateKey' :: BA.ByteArrayAccess p => Int -> Int -> ByteString -> p -> ByteString
+generateKey' iterations size salt p = PBKDF2.generate prf params p salt
   where
     prf = PBKDF2.prfHMAC SHA1
     params = PBKDF2.Parameters iterations size
@@ -474,7 +473,7 @@ unseal' opts now p cookie = do
     verify :: Cookie -> KeyPass -> Either String ()
     verify Cookie{..} sec = do
       digest <- hmacWithPassword (ironIntegrity opts) sec ckIntSalt ckEnc
-      if constEqBytes ckIntDigest digest
+      if BA.constEq ckIntDigest digest
         then Right ()
         else Left "Bad hmac value"
 
