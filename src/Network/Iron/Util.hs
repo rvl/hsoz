@@ -6,6 +6,7 @@ module Network.Iron.Util (
   , b64dec
   , b64url
   , b64urldec
+  , b16
   -- * Time parsing
   , parseExpMsec
   -- * Error handling
@@ -20,6 +21,10 @@ import qualified Data.ByteString.Char8   as S8
 import           Data.Monoid             ((<>))
 import           Data.Time.Clock         (NominalDiffTime)
 import           Text.Read               (readMaybe)
+
+-- | Shorthand for hex encode
+b16 :: ByteString -> ByteString
+b16 = B.convertToBase B.Base16
 
 -- | Shorthand for encode in Base64.
 b64 :: ByteArrayAccess a => a -> ByteString

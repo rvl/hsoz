@@ -81,7 +81,6 @@ import           Data.Aeson
 import qualified Data.Aeson             as JSON (eitherDecode', encode)
 import           Data.ByteString        (ByteString)
 import qualified Data.ByteString        as BS
-import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8  as S8
 import qualified Data.ByteString.Lazy   as BL
 import           Data.SecureMem         (SecureMem(..), ToSecureMem(..))
@@ -494,7 +493,7 @@ isExpired _ _ Nothing         = False
 isExpired now skew (Just exp) = exp <= (now - skew)
 
 genSalt :: DRG gen => Int -> gen -> (ByteString, gen)
-genSalt saltBits gen = withRandomBytes gen (saltBits `quot` 8) B16.encode
+genSalt saltBits gen = withRandomBytes gen (saltBits `quot` 8) b16
 
 genIV :: DRG gen => Int -> gen -> (ByteString, gen)
 genIV size gen = withRandomBytes gen size id

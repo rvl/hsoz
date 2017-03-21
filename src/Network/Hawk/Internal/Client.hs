@@ -16,7 +16,6 @@ import           Crypto.Random
 import qualified Data.ByteArray            as BA (unpack)
 import           Data.ByteString           (ByteString)
 import qualified Data.ByteString           as BS
-import qualified Data.ByteString.Base64    as B64
 import qualified Data.ByteString.Char8     as S8
 import qualified Data.ByteString.Lazy      as BL
 import           Data.Byteable             (constEqBytes)
