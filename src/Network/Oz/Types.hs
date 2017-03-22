@@ -34,7 +34,8 @@ import           Data.Default           (Default(..))
 
 import           Network.Hawk           (HawkAlgo)
 import           Network.Hawk.Types
-import qualified Network.Iron           as Iron (Options(..))
+import qualified Network.Iron           as Iron (Options(..), options)
+import           Network.Iron           (IronCipher(..), IronMAC(..))
 
 -- | Identifies an Oz Application
 type OzAppId = Text
@@ -171,7 +172,8 @@ data TicketOpts = TicketOpts
   }
 
 defaultTicketOpts :: TicketOpts
-defaultTicketOpts = TicketOpts 3600 60 True def 32 (HawkAlgo SHA256) mempty
+defaultTicketOpts = TicketOpts 3600 60 True iron 32 (HawkAlgo SHA256) mempty
+  where iron = Iron.options AES256CBC (IronMAC SHA256) 256 100000
 
 instance Default TicketOpts where
   def = defaultTicketOpts

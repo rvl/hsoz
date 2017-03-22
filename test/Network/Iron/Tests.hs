@@ -13,7 +13,6 @@ import Data.Maybe (fromJust)
 import Data.Either (isLeft)
 import Data.Aeson
 import Data.Time.Clock (NominalDiffTime)
-import Data.Default (def)
 
 import Test.QuickCheck
 import Test.QuickCheck.Monadic
@@ -136,26 +135,29 @@ instance Arbitrary a => Arbitrary (Test1 a) where
 prop_test :: (ToJSON a, FromJSON a, Eq a) => Test1 a -> Property
 prop_test Test1{..} = monadicIO $ do
   obj' <- run $ do
-    s <- seal test1Password test1Obj
-    Right m <- unseal (onePassword' test1Password) s
+    Just s <- seal testOpts test1Password test1Obj
+    Right m <- unseal testOpts (onePassword' test1Password) s
     return m
   assert (obj' == obj)
+
+testOpts :: Options
+testOpts = options AES256CBC (IronMAC SHA256) 256 1
 
 -- turns object into a ticket than parses the ticket successfully
 prop_test1 :: Object -> Property
 prop_test1 o = monadicIO $ do
   obj' <- run $ do
-    s <- seal defaultPassword o
-    unseal lookupPassword s
+    Just s <- seal testOpts defaultPassword o
+    unseal testOpts lookupPassword s
   assert (obj' == Right obj)
 
 -- unseal and sealed object with expiration
 prop_test2 :: NominalDiffTime -> Property
 prop_test2 ttl = monadicIO $ do
-  let opts = def { ironTTL = ttl }
+  let opts = testOpts { ironTTL = ttl }
   obj' <- run $ do
-    Just s <- sealWith opts defaultPassword obj
-    unseal lookupPassword s
+    Just s <- seal opts defaultPassword obj
+    unseal opts lookupPassword s
   assert (obj' == Right obj)
 
 -- unseal and sealed object with expiration and time offset
@@ -166,8 +168,8 @@ prop_test3 Test1{..} = monadicIO $ do
              { ironLocaltimeOffset = negate (testTTL + 100)
              , ironTTL = testTTL }
   mobj' <- run $ do
-    Just s <- sealWith opts test1Password test1Obj
-    unseal (onePassword' test1Password) s
+    Just s <- seal opts test1Password test1Obj
+    unseal opts (onePassword' test1Password) s
   assert (testTTL == 0 || isErr mobj')
   assert (testTTL /= 0 || mobj' == Right test1Obj)
 
@@ -186,8 +188,8 @@ isErr = isLeft
 prop_test4 :: ToJSON a => Test1 a -> Property
 prop_test4 Test1{..} = monadicIO $ do
   mobj' <- run $ do
-    Just s <- sealWith test1Opts defaultPassword test1Obj
-    unseal (const Nothing) s :: IO (Either String Object)
+    Just s <- seal test1Opts defaultPassword test1Obj
+    unseal test1Opts (const Nothing) s :: IO (Either String Object)
   assert (mobj' == Left "Cannot find password: default")
 
 -- ## generateKey
@@ -240,13 +242,13 @@ ticket04 = "Fe26.2**b3ad22402ccc60fa4d527f7d1c9ff2e37e9b2e5723e9e2ffba39a489e984
 -- unseals a ticket
 testUnseal01 :: Assertion
 testUnseal01 = do
-  r <- unseal lookupPassword ticket01
+  r <- unseal testOpts lookupPassword ticket01
   r @?= Right obj
 
 -- | Asserts that unsealing a ticket fails with the given message
 unsealFail :: ByteString -> String -> Assertion
 unsealFail ticket msg = do
-  r <- unseal lookupPassword ticket :: IO (Either String Object)
+  r <- unseal testOpts lookupPassword ticket :: IO (Either String Object)
   r @?= Left msg
 
 -- returns an error when number of sealed components is wrong

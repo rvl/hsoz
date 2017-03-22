@@ -23,9 +23,10 @@
 -- >>> import Data.ByteString (ByteString)
 -- >>> import Data.Aeson
 -- >>> import qualified Network.Iron as Iron
+-- >>> let opts = Iron.options Iron.AES256CBC (Iron.IronMAC Iron.SHA256) 256 66666
 -- >>> let Just obj = decode "{\"a\":1,\"d\":{\"e\":\"f\"},\"b\":2,\"c\":[3,4,5]}" :: Maybe Object
 -- >>> let secret = "some_not_random_password" :: ByteString
--- >>> s <- Iron.seal (Iron.password secret) obj
+-- >>> Just s <- Iron.seal opts (Iron.password secret) obj
 -- >>> print s
 -- "Fe26.2**3976da2bc627b3551c1ebfe40376bb791efb17f4425facc648038fdaaa2f67b2
 -- *voiPExJrXAxmTWyQr7-Hvw*r_Ok7NOgy9sD2fS61t_u9z8qoszwBRze3NnA6PFmjnd06sLh0
@@ -37,7 +38,7 @@
 --
 -- To unseal the string:
 --
--- >>> Iron.unseal (onePassword secret) s :: IO (Either String Object)
+-- >>> Iron.unseal opts (onePassword secret) s :: IO (Either String Object)
 -- Right (Object (fromList [("a",Number 1.0),
 -- ("d",Object (fromList [("e",String "f")])),
 -- ("b",Number 2.0),
@@ -45,9 +46,8 @@
 
 module Network.Iron
   ( seal
-  , sealWith
   , unseal
-  , unsealWith
+  , options
   , password
   , passwords
   , passwordWithId
@@ -63,7 +63,6 @@ module Network.Iron
   , IronMAC(..)
   , SHA256(SHA256)
   , IronSalt(..)
-  , def
   ) where
 
 import           Control.Monad          (liftM, when)
@@ -88,7 +87,6 @@ import           Data.ByteArray         (ScrubbedBytes, ByteArrayAccess)
 import qualified Data.Map               as M
 import           Data.Maybe             (fromJust)
 import           Data.Monoid            ((<>))
-import           Data.Default           (Default(..))
 import           Data.Text              (Text)
 import           Data.Text.Encoding     (decodeUtf8, encodeUtf8)
 import           Data.Char              (isAscii, isAlphaNum)
@@ -97,14 +95,7 @@ import           Data.Time.Clock.POSIX
 import           Network.Iron.Util
 import           Numeric                (showHex)
 
--- | Iron options used by 'sealWith' and 'unsealWith'. The
--- default options are:
---
--- * Encryption: 'Crypto.Cipher.AES.AES256' using CBC mode
--- * Integrity HMAC: 'Crypto.Hash.Algorithms.SHA256'
--- * Infinite message lifetime
--- * Timestamp skew: 60 seconds either way
--- * Local time offset: 0
+-- | Iron options used by 'sealWith' and 'unsealWith'.
 data Options = Options
   { ironEncryption      :: EncryptionOpts  -- ^ Encryption options
   , ironIntegrity       :: IntegrityOpts   -- ^ Message integrity verification options
@@ -163,36 +154,44 @@ data IntegrityOpts = IntegrityOpts
   , iiIterations :: Int -- ^ Number of iterations for MAC key generation
   } deriving Show
 
-defaultsEncrypt :: IronCipher -> EncryptionOpts
-defaultsEncrypt algo = EncryptionOpts
-                       { ieSalt = IronGenSalt 256
-                       , ieAlgorithm = algo
-                       , ieIterations = 1
+encryptOptions :: IronCipher -- ^ Cipher algorithm
+               -> Int -- ^ Number of salt bits for key generation
+               -> Int -- ^ Number of iterations of key derivation function
+               -> EncryptionOpts
+encryptOptions a s n = EncryptionOpts
+                       { ieSalt = IronGenSalt s
+                       , ieAlgorithm = a
+                       , ieIterations = n
                        , ieIV = Nothing }
 
-defaultsIntegrity :: IronMAC -> IntegrityOpts
-defaultsIntegrity algo = IntegrityOpts
-                         { iiSalt = IronGenSalt 256
-                         , iiAlgorithm = algo
-                         , iiIterations = 1 }
+integrityOptions :: IronMAC -- ^ Cryptographic hash algorithm
+                 -> Int -- ^ Number of salt bits for key generation
+                 -> Int -- ^ Number of iterations of key derivation function
+                 -> IntegrityOpts
+integrityOptions a s n = IntegrityOpts
+                         { iiSalt = IronGenSalt s
+                         , iiAlgorithm = a
+                         , iiIterations = n }
 
-defaults :: Options
-defaults = Options
-  { ironEncryption = def
-  , ironIntegrity = def
+-- | A set of basic options. You need to choose a cipher and
+-- parameters for key generation.
+--
+-- There are also some default options chosen, which are:
+-- * Infinite message lifetime
+-- * Timestamp skew: 60 seconds either way
+-- * Local time offset: 0
+options :: IronCipher -- ^ Encryption algorithm.
+        -> IronMAC    -- ^ Integrity check algorithm (use @IronMAC SHA256@).
+        -> Int        -- ^ Number of salt bits for key generation.
+        -> Int        -- ^ Number of iterations of key derivation function.
+        -> Options
+options e i s n = Options
+  { ironEncryption = encryptOptions e s n
+  , ironIntegrity = integrityOptions i s n
   , ironTTL = 0
   , ironTimestampSkew = 60
   , ironLocaltimeOffset = 0
   }
-
-instance Default EncryptionOpts where
-  def = defaultsEncrypt AES256CBC
-
-instance Default IntegrityOpts where
-  def = defaultsIntegrity (IronMAC SHA256)
-
-instance Default Options where
-  def = defaults
 
 -- | Identifies the password to use when unsealing the message.
 type PasswordId = ByteString
@@ -259,15 +258,10 @@ onePassword :: ByteArrayAccess a => a -> LookupPassword
 onePassword = const . Just . password
 
 -- | Encodes and encrypts a 'Data.Aeson.Value' using the given
--- password.
-seal :: ToJSON a => Password -> a -> IO ByteString
-seal password = liftM fromJust <$> sealWith defaults password
-
--- | Encodes and encrypts a 'Data.Aeson.Value' using the given
 -- password and 'Options'. Encryption may fail if the supplied
 -- options are wrong.
-sealWith :: ToJSON a => Options -> Password -> a -> IO (Maybe ByteString)
-sealWith opts p v = do
+seal :: ToJSON a => Options -> Password -> a -> IO (Maybe ByteString)
+seal opts p v = do
   s <- getSealStuff opts
   return $ seal' opts s p v
 
@@ -441,14 +435,9 @@ instance IsIronCipher IronCipher where
     unpad p text'
 
 -- | Decrypts an Iron-encoded message 'Data.Aeson.Value' with the
--- given password.
-unseal :: FromJSON a => LookupPassword -> ByteString -> IO (Either String a)
-unseal p = unsealWith defaults p
-
--- | Decrypts an Iron-encoded message 'Data.Aeson.Value' with the
 -- given password and 'Options'.
-unsealWith :: FromJSON a => Options -> LookupPassword -> ByteString -> IO (Either String a)
-unsealWith opts p t = do
+unseal :: FromJSON a => Options -> LookupPassword -> ByteString -> IO (Either String a)
+unseal opts p t = do
   now <- getPOSIXTime
   return $ unseal' opts now p t
 

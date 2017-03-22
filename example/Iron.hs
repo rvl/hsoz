@@ -69,6 +69,18 @@ main = join . execParser $
             <> help "Encryption algorithm: AES128CTR or AES256CBC (default)"
             <> value AES256CBC
             )
+      <*> option auto
+            ( long "salt-bits"
+            <> metavar "INTEGER"
+            <> help "Number of salt bits for key generation."
+            <> value 256
+            )
+      <*> option auto
+            ( long "iterations"
+            <> metavar "INTEGER"
+            <> help "Number of iterations of key derivation function."
+            <> value 100000
+            )
 
 ttl :: ReadM NominalDiffTime
 ttl = eitherReader (fmap fromInteger . readEither)
@@ -76,12 +88,11 @@ ttl = eitherReader (fmap fromInteger . readEither)
 data Action = Seal | Unseal
 data Format = JSONFormat | StringFormat
 
-iron :: Either String String -> Maybe Action -> Format -> NominalDiffTime -> IronCipher -> IO ()
-iron p a j ttl c = do
+iron :: Either String String -> Maybe Action -> Format -> NominalDiffTime
+     -> IronCipher -> Int -> Int -> IO ()
+iron p a j ttl c s i = do
   p' <- password <$> readPassword p
-  let opts = def { ironEncryption = def { ieAlgorithm = c }
-                 , ironTTL = ttl
-                 }
+  let opts = (options c (IronMAC SHA256) s i) { ironTTL = ttl }
   L8.hGetContents stdin >>= mapM_ (processLine opts p' a j) . L8.lines
 
 readPassword :: Either FilePath String -> IO ByteString
@@ -120,10 +131,10 @@ conv JSONFormat   = eitherDecode'
 conv StringFormat = bimap show (String . TL.toStrict) . decodeUtf8'
 
 doSeal :: ToJSON a => Options -> Password -> a -> IO (Either String ByteString)
-doSeal o p a = justRight "Failed to seal" <$> sealWith o p a
+doSeal o p a = justRight "Failed to seal" <$> seal o p a
 
 doUnseal :: FromJSON a => Options -> Password -> L8.ByteString -> IO (Either String a)
-doUnseal o p s = unsealWith o (const (Just p)) (L8.toStrict s)
+doUnseal o p s = unseal o (const (Just p)) (L8.toStrict s)
 
 -- | Converts 'Maybe' to 'Either'.
 justRight :: e -> Maybe a -> Either e a
