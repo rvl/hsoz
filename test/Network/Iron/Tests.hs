@@ -113,15 +113,15 @@ instance Arbitrary EncryptionOpts where
 instance Arbitrary IntegrityOpts where
   arbitrary = IntegrityOpts <$> arbitrary <*> arbitrary <*> choose (1, 3)
 
-instance Arbitrary IronSalt where
-  -- arbitrary = oneof [IronSalt <$> arbitrary, pure $ IronGenSalt 256]
-  arbitrary = pure (IronGenSalt 256)
+instance Arbitrary Salt where
+  -- arbitrary = oneof [Salt <$> arbitrary, pure $ GenSalt 256]
+  arbitrary = pure (GenSalt 256)
 
 instance Arbitrary IronCipher where
   arbitrary = oneof (map pure [AES128CTR, AES256CBC])
 
-instance Arbitrary IronMAC where
-  arbitrary = pure (IronMAC SHA256)
+instance Arbitrary IronHMAC where
+  arbitrary = pure SHA256
 
 data Test1 a = Test1
   { test1Obj :: a
@@ -141,7 +141,7 @@ prop_test Test1{..} = monadicIO $ do
   assert (obj' == obj)
 
 testOpts :: Options
-testOpts = options AES256CBC (IronMAC SHA256) 256 1
+testOpts = options AES256CBC SHA256 256 1
 
 -- turns object into a ticket than parses the ticket successfully
 prop_test1 :: Object -> Property

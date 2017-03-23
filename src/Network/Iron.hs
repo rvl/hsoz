@@ -23,7 +23,7 @@
 -- >>> import Data.ByteString (ByteString)
 -- >>> import Data.Aeson
 -- >>> import qualified Network.Iron as Iron
--- >>> let opts = Iron.options Iron.AES256CBC (Iron.IronMAC Iron.SHA256) 256 66666
+-- >>> let opts = Iron.options Iron.AES256CBC Iron.SHA256 256 66666
 -- >>> let Just obj = decode "{\"a\":1,\"d\":{\"e\":\"f\"},\"b\":2,\"c\":[3,4,5]}" :: Maybe Object
 -- >>> let secret = "some_not_random_password" :: ByteString
 -- >>> Just s <- Iron.seal opts (Iron.password secret) obj
@@ -60,9 +60,8 @@ module Network.Iron
   , EncryptionOpts(..)
   , IntegrityOpts(..)
   , IronCipher(..)
-  , IronMAC(..)
-  , SHA256(SHA256)
-  , IronSalt(..)
+  , IronHMAC(..)
+  , Salt(..)
   ) where
 
 import           Control.Monad          (liftM, when)
@@ -70,8 +69,8 @@ import           Crypto.Cipher.AES      (AES128, AES256 (..))
 import           Crypto.Cipher.Types
 import           Crypto.Data.Padding
 import           Crypto.Error           (CryptoFailable (..), maybeCryptoError)
-import           Crypto.Hash.Algorithms (SHA256 (..))
-import           Crypto.Hash.Algorithms (SHA1 (..))
+import qualified Crypto.Hash.Algorithms as C (SHA256 (..))
+import           Crypto.Hash.Algorithms (HashAlgorithm(..), SHA1 (..))
 import qualified Crypto.KDF.PBKDF2      as PBKDF2
 import           Crypto.MAC.HMAC        (Context, HMAC, finalize, hmac,
                                          hmacGetDigest, initialize, updates)
@@ -106,6 +105,7 @@ data Options = Options
 
 -- | Encryption algorithms supported by Iron.
 data IronCipher = AES128CTR | AES256CBC  deriving (Show, Read, Eq, Enum)
+data IronHMAC = SHA256 deriving (Show, Read, Eq, Enum)
 
 class IsIronCipher a where
   ivSize :: a -> Int
@@ -117,20 +117,13 @@ class IsIronMAC a where
   macKeySize :: a -> Int
   ironMac :: a -> ByteString -> ByteString -> ByteString
 
--- | Integrity checking algorithm supported by Iron. At present, there
--- is only one. Use @IronMAC SHA256@.
-data IronMAC = forall alg . (IsIronMAC alg, Show alg) => IronMAC alg
-
-instance Show IronMAC where
-  show (IronMAC alg) = show alg
-
-instance IsIronMAC IronMAC where
-  macKeySize (IronMAC alg) = macKeySize alg
-  ironMac (IronMAC alg) = ironMac alg
+instance IsIronMAC IronHMAC where
+  macKeySize SHA256 = 32
+  ironMac SHA256 key text = b64url $ hmacGetDigest (hmac key text :: HMAC C.SHA256)
 
 -- | Specifies the salt for password-based key generation.
-data IronSalt = IronSalt ByteString -- ^ Supply pre-generated salt
-              | IronGenSalt Int -- ^ Generate salt of given size, in bits
+data Salt = Salt ByteString -- ^ Supply pre-generated salt
+          | GenSalt Int     -- ^ Generate salt of given size, in bits
   deriving Show
 
 {-
@@ -141,7 +134,7 @@ todo:
 
 -- | Options controlling encryption of Iron messages.
 data EncryptionOpts = EncryptionOpts
-  { ieSalt       :: IronSalt -- ^ Salt for password-based key generation
+  { ieSalt       :: Salt -- ^ Salt for password-based key generation
   , ieAlgorithm  :: IronCipher -- ^ Encryption algorithm
   , ieIterations :: Int -- ^ Number of iterations for password-based key generation
   , ieIV         :: Maybe ByteString -- ^ Pre-generated initial value block
@@ -149,8 +142,8 @@ data EncryptionOpts = EncryptionOpts
 
 -- | Options controlling cryptographic verification of Iron messages.
 data IntegrityOpts = IntegrityOpts
-  { iiSalt       :: IronSalt -- ^ Salt for MAC key generation
-  , iiAlgorithm  :: IronMAC -- ^ Hash-based MAC algorithm
+  { iiSalt       :: Salt -- ^ Salt for MAC key generation
+  , iiAlgorithm  :: IronHMAC -- ^ Hash-based MAC algorithm
   , iiIterations :: Int -- ^ Number of iterations for MAC key generation
   } deriving Show
 
@@ -159,17 +152,17 @@ encryptOptions :: IronCipher -- ^ Cipher algorithm
                -> Int -- ^ Number of iterations of key derivation function
                -> EncryptionOpts
 encryptOptions a s n = EncryptionOpts
-                       { ieSalt = IronGenSalt s
+                       { ieSalt = GenSalt s
                        , ieAlgorithm = a
                        , ieIterations = n
                        , ieIV = Nothing }
 
-integrityOptions :: IronMAC -- ^ Cryptographic hash algorithm
+integrityOptions :: IronHMAC -- ^ Cryptographic hash algorithm
                  -> Int -- ^ Number of salt bits for key generation
                  -> Int -- ^ Number of iterations of key derivation function
                  -> IntegrityOpts
 integrityOptions a s n = IntegrityOpts
-                         { iiSalt = IronGenSalt s
+                         { iiSalt = GenSalt s
                          , iiAlgorithm = a
                          , iiIterations = n }
 
@@ -181,7 +174,7 @@ integrityOptions a s n = IntegrityOpts
 -- * Timestamp skew: 60 seconds either way
 -- * Local time offset: 0
 options :: IronCipher -- ^ Encryption algorithm.
-        -> IronMAC    -- ^ Integrity check algorithm (use @IronMAC SHA256@).
+        -> IronHMAC    -- ^ Integrity check algorithm (use @SHA256@).
         -> Int        -- ^ Number of salt bits for key generation.
         -> Int        -- ^ Number of iterations of key derivation function.
         -> Options
@@ -365,13 +358,9 @@ expTime :: Options -> POSIXTime -> Maybe NominalDiffTime
 expTime Options{ironTTL} now | ironTTL > 0 = Just ((now + ironTTL) * 1000)
                               | otherwise = Nothing
 
-instance IsIronMAC SHA256 where
-  macKeySize _ = 32
-  ironMac _ key text = b64url $ hmacGetDigest (hmac key text :: HMAC SHA256)
-
 -- | Calculates the MAC of a message. The result is encoded in the
 -- URL-friendly variant of Base64.
-macWithKey :: IronMAC -> ByteString -> ByteString -> ByteString
+macWithKey :: IronHMAC -> ByteString -> ByteString -> ByteString
 macWithKey algo key text = ironMac algo key text
 
 generateKey :: Int -> Int -> ByteString -> KeyPass -> Either String ByteString
@@ -486,9 +475,9 @@ genSalt saltBits gen = withRandomBytes gen (saltBits `quot` 8) b16
 genIV :: DRG gen => Int -> gen -> (ByteString, gen)
 genIV size gen = withRandomBytes gen size id
 
-genSaltMaybe :: DRG gen => IronSalt -> gen -> (ByteString, gen)
-genSaltMaybe (IronSalt salt)   = \gen -> (salt, gen)
-genSaltMaybe (IronGenSalt len) = genSalt len
+genSaltMaybe :: DRG gen => Salt -> gen -> (ByteString, gen)
+genSaltMaybe (Salt salt)   = \gen -> (salt, gen)
+genSaltMaybe (GenSalt len) = genSalt len
 
 genIVMaybe :: DRG gen => IronCipher -> Maybe ByteString -> gen -> (ByteString, gen)
 genIVMaybe _ (Just iv)  = \gen -> (iv, gen)

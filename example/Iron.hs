@@ -92,7 +92,7 @@ iron :: Either String String -> Maybe Action -> Format -> NominalDiffTime
      -> IronCipher -> Int -> Int -> IO ()
 iron p a j ttl c s i = do
   p' <- password <$> readPassword p
-  let opts = (options c (IronMAC SHA256) s i) { ironTTL = ttl }
+  let opts = (options c SHA256 s i) { ironTTL = ttl }
   L8.hGetContents stdin >>= mapM_ (processLine opts p' a j) . L8.lines
 
 readPassword :: Either FilePath String -> IO ByteString
